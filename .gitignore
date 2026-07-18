@@ -1,0 +1,13 @@
+# Swift / SPM
+.build/
+.swiftpm/
+*.xcodeproj
+Package.resolved
+DerivedData/
+
+# macOS
+.DS_Store
+
+# Oracle build artifacts (submodule builds its own jar; don't commit binaries)
+*.jar
+vendor/pumpx2-oracle/**/build/

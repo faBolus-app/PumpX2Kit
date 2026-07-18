@@ -1,0 +1,4 @@
+[submodule "vendor/pumpx2-oracle"]
+	path = vendor/pumpx2-oracle
+	url = https://github.com/jwoglom/pumpx2
+	shallow = true

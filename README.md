@@ -1,0 +1,57 @@
+# PumpX2Kit
+
+A Swift port of the reverse-engineered [`jwoglom/pumpx2`](https://github.com/jwoglom/pumpx2)
+protocol for the Tandem **t:slim X2 / Mobi** insulin pump. It provides the shared
+protocol / auth / BLE core that the [`ControlX2iOS`](../ControlX2iOS) app and its watch /
+Garmin remotes build on.
+
+> [!WARNING]
+> **This is an independent, unofficial reimplementation and a bench proof-of-concept.**
+> It is **not** affiliated with, endorsed by, or a fork of Tandem Diabetes Care, the
+> `pumpX2` project, or the `controlX2` project. The insulin-dosing path here is our own
+> reimplementation and is treated as **unproven**. All testing is done on a **dedicated
+> test pump dispensing saline into a container on a scale — never on a body.** On-body
+> use is explicitly out of scope.
+
+## Modules
+
+| Target | Purpose |
+| --- | --- |
+| `PumpX2Messages` | Message framing, opcodes, request/response models, packetization. Portable, no platform deps. |
+| `PumpX2Auth` | Pairing handshake (legacy CentralChallenge + modern JPAKE) and per-command HMAC signing. **Safety-critical.** |
+| `PumpX2BLE` | Core Bluetooth central: scan / connect / bond / discover / notify. Platform-agnostic (iOS + watchOS). |
+| `PumpX2BenchHarness` | Executable bench/oracle CLI: connect → status → saline bolus → cancel. |
+
+## The cliparser oracle
+
+Every outgoing message must **byte-match** the upstream `cliparser` output ("byte-exact or
+fail"). The upstream `pumpx2` repo is pinned as a git submodule at `vendor/pumpx2-oracle`
+(see [`PINNED.md`](PINNED.md)); its `cliparser` shadow JAR is the byte-level oracle.
+
+Build the oracle (requires **JDK 17+** — the pinned Gradle 9.x will not run on JDK 11):
+
+```sh
+cd vendor/pumpx2-oracle
+JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :cliparser:shadowJar
+# → cliparser/build/libs/cliparser.jar  (shadow/fat jar)
+```
+
+Generate reference bytes for a message:
+
+```sh
+java -jar cliparser.jar encode <txId> <MessageName> '<jsonParams>'
+# prints JSON incl. a "packets" array of hex — the bytes Swift output is compared against
+# e.g. encode 0 ApiVersionRequest '{}' → packets ["00002000005a4a"]
+```
+
+## Build & test
+
+```sh
+swift build
+swift test
+```
+
+## Status
+
+Milestone 1 in progress — see the implementation plan. Do not proceed to app / watch work
+until the Milestone 1 bench definition-of-done is met.
