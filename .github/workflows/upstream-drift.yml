@@ -1,0 +1,69 @@
+name: Upstream drift alarm
+
+# Detects when jwoglom/pumpx2 changes protocol-relevant files vs. our pinned submodule
+# commit. Never auto-merges — for a dosing path, every upstream change is reviewed and
+# bench-revalidated by hand (see README "Staying synced with upstream").
+
+on:
+  schedule:
+    - cron: '0 13 * * 1'   # Mondays 13:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Compare pinned commit to upstream main
+        id: drift
+        run: |
+          set -euo pipefail
+          PINNED=$(git -C vendor/pumpx2-oracle rev-parse HEAD)
+          echo "pinned=$PINNED" >> "$GITHUB_OUTPUT"
+          git -C vendor/pumpx2-oracle fetch --depth=50 origin main
+          UPSTREAM=$(git -C vendor/pumpx2-oracle rev-parse origin/main)
+          echo "upstream=$UPSTREAM" >> "$GITHUB_OUTPUT"
+          if [ "$PINNED" = "$UPSTREAM" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # Protocol-relevant paths whose changes matter for the port.
+          CHANGED=$(git -C vendor/pumpx2-oracle diff --name-only "$PINNED" "$UPSTREAM" -- \
+            'messages/src/main/java/com/jwoglom/pumpx2/pump/messages' \
+            'shared/src/main/java/com/jwoglom/pumpx2/shared' || true)
+          if [ -n "$CHANGED" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            { echo 'files<<EOF'; echo "$CHANGED"; echo 'EOF'; } >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open/flag drift issue
+        if: steps.drift.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { pinned, upstream, files } = ${{ toJSON(steps.drift.outputs) }};
+            const body = [
+              `Upstream \`jwoglom/pumpx2\` changed protocol-relevant files vs our pinned commit.`,
+              ``,
+              `- pinned: \`${pinned}\``,
+              `- upstream main: \`${upstream}\``,
+              ``,
+              `Changed files:`,
+              '```', files, '```',
+              ``,
+              `**Do not auto-merge.** Review the diff, hand-port the delta, get the oracle suite`,
+              `green, re-run bench validation, then bump the submodule + cut a new version.`,
+            ].join('\n');
+            await github.rest.issues.create({
+              owner: context.repo.owner, repo: context.repo.repo,
+              title: `Upstream pumpx2 protocol drift detected`,
+              body,
+            });
