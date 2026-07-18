@@ -1,14 +1,11 @@
 import Foundation
-import PumpX2Messages
 
-/// PumpX2Auth — pairing handshake (legacy CentralChallenge/PumpChallenge and modern JPAKE)
-/// plus per-command HMAC signing.
+/// PumpX2Auth — pump authentication: crypto primitives (`Crypto`), the legacy 16-char
+/// pairing handshake (`PairingAuth`), and per-command signing support.
 ///
-/// SAFETY-CRITICAL: the per-command signature authorizes insulin delivery. Nothing here
-/// drives a pump until it is validated byte-exact against a captured session trace / the
-/// pumpX2 test vectors. See Milestone 1c in the plan.
-public enum PumpX2Auth {
-    /// Placeholder marker until the auth layer is ported. Kept so the target compiles
-    /// during scaffolding.
-    public static let notYetImplemented = true
-}
+/// SAFETY-CRITICAL. The per-command signature authorizes insulin delivery (see
+/// `PumpX2Messages.Packetize` for the HMAC-SHA1 signing applied to signed messages). The
+/// legacy V1 pairing path is implemented and unit-tested. The modern JPAKE (6-digit) path
+/// requires an elliptic-curve J-PAKE implementation and is tracked separately — see the
+/// plan's open question.
+public enum PumpX2Auth {}

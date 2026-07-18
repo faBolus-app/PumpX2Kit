@@ -60,6 +60,30 @@ struct OracleParityTests {
         #expect(swift == oracle, "\(name): swift=\(swift) oracle=\(oracle)")
     }
 
+    // MARK: - Authentication messages
+
+    @Test func centralChallengeRequestMatchesOracle() throws {
+        let challenge = try Hex.decode("00112233445566778899") // 10 bytes; first 8 used
+        let msg = CentralChallengeRequest(appInstanceId: 0, centralChallenge: challenge)
+        let oracle = try OracleRunner.encode(
+            txId: 1, messageName: "CentralChallengeRequest",
+            json: "{\"appInstanceId\":0,\"centralChallenge\":\"00112233445566778899\"}"
+        ).packets
+        #expect(try swiftPackets(msg, txId: 1) == oracle)
+    }
+
+    /// PumpChallengeRequest's 22-byte cargo spans two BLE packets — exercises chunking.
+    @Test func pumpChallengeRequestMatchesOracleMultiPacket() throws {
+        let hash = try Hex.decode("0102030405060708090a0b0c0d0e0f1011121314") // 20 bytes
+        let msg = PumpChallengeRequest(appInstanceId: 0, pumpChallengeHash: hash)
+        let oracle = try OracleRunner.encode(
+            txId: 2, messageName: "PumpChallengeRequest",
+            json: "{\"appInstanceId\":0,\"pumpChallengeHash\":\"0102030405060708090a0b0c0d0e0f1011121314\"}"
+        ).packets
+        #expect(oracle.count == 2)          // sanity: really multi-packet
+        #expect(try swiftPackets(msg, txId: 2) == oracle)
+    }
+
     // MARK: - Signed bolus flow
 
     /// Serializes a signed `message` with the shared test pairing code / pump time, matching

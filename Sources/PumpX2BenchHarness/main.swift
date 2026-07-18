@@ -12,4 +12,12 @@ import PumpX2BLE
 // delivered mass via scale → cancel mid-delivery. Not yet implemented; scaffold only.
 
 print("PumpX2BenchHarness — scaffold. Not yet connected to a pump.")
-print("PumpX2Messages ready. Auth stub: \(PumpX2Auth.notYetImplemented). BLE stub: \(PumpX2BLE.notYetImplemented).")
+
+// Demonstrate the message layer end-to-end (serialization only; no BLE yet).
+let apiReq = ApiVersionRequest()
+if let packets = try? Packetize.packetize(apiReq, txId: 0) {
+    print("ApiVersionRequest(txId=0) packets: \(packets.map { Hex.encode($0.build()) })")
+}
+print("Bolus-flow opcodes: permission=0x\(String(BolusPermissionRequest.props.opCode, radix: 16)), "
+    + "initiate=0x\(String(InitiateBolusRequest.props.opCode, radix: 16)), "
+    + "cancel=0x\(String(CancelBolusRequest.props.opCode, radix: 16))")
