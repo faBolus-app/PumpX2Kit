@@ -83,12 +83,13 @@ public final class PumpBLEClient: NSObject {
     // MARK: - Public API
 
     public func startScan() {
+        wasScanning = true
         guard central.state == .poweredOn else { state = mapCentralState(central.state); return }
         state = .scanning
         central.scanForPeripherals(withServices: [CBUUID(nsuuid: ServiceUUID.pumpService)])
     }
 
-    public func stopScan() { central.stopScan() }
+    public func stopScan() { wasScanning = false; central.stopScan() }
 
     public func connect(_ peripheral: CBPeripheral) {
         stopScan()
@@ -96,11 +97,14 @@ public final class PumpBLEClient: NSObject {
         self.peripheral = peripheral
         peripheral.delegate = self
         state = .connecting
-        central.connect(peripheral)
+        // Keep the connection request alive across states; iOS completes it when in range.
+        central.connect(peripheral, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
     }
 
     /// Set when the user (not a range/BLE drop) asks to disconnect, so we don't auto-reconnect.
     private var intentionalDisconnect = false
+    /// Whether we want to be scanning (to resume after Bluetooth toggles back on).
+    private var wasScanning = false
 
     public func disconnect() {
         intentionalDisconnect = true
@@ -178,7 +182,18 @@ public final class PumpBLEClient: NSObject {
 
 extension PumpBLEClient: CBCentralManagerDelegate {
     public nonisolated func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        MainActor.assumeIsolated { state = mapCentralState(central.state) }
+        MainActor.assumeIsolated {
+            state = mapCentralState(central.state)
+            // Recover after Bluetooth toggles back on: resume a pending connection (or rescan).
+            if central.state == .poweredOn && !intentionalDisconnect {
+                if let p = peripheral, p.state != .connected {
+                    state = .connecting
+                    central.connect(p, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
+                } else if peripheral == nil && wasScanning {
+                    startScan()
+                }
+            }
+        }
     }
 
     /// State restoration: iOS relaunched us (e.g. after termination) with the pump connection
@@ -217,16 +232,18 @@ extension PumpBLEClient: CBCentralManagerDelegate {
         MainActor.assumeIsolated {
             characteristics.removeAll()
             reassembly.removeAll()
-            state = .disconnected
             if let error { notify { $0.pumpClient(self, didError: error) } }
             // Auto-reconnect on an unintended drop (e.g. out of range): a pending connect
             // persists in CoreBluetooth and completes when the pump comes back in range, in the
-            // foreground or background — no manual "Connect" needed.
+            // foreground or background — no manual "Connect" needed. Go straight to .connecting
+            // (skip a .disconnected flicker) so the UI shows "reconnecting".
             if !intentionalDisconnect {
                 self.peripheral = peripheral
                 peripheral.delegate = self
                 state = .connecting
-                central.connect(peripheral)
+                central.connect(peripheral, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
+            } else {
+                state = .disconnected
             }
         }
     }
@@ -234,8 +251,14 @@ extension PumpBLEClient: CBCentralManagerDelegate {
     public nonisolated func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral,
                                            error: Error?) {
         MainActor.assumeIsolated {
-            state = .disconnected
             if let error { notify { $0.pumpClient(self, didError: error) } }
+            // Retry unless the user disconnected: re-issue the (persisting) connect request.
+            if !intentionalDisconnect {
+                state = .connecting
+                central.connect(peripheral, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
+            } else {
+                state = .disconnected
+            }
         }
     }
 }
