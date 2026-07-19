@@ -18,20 +18,23 @@ public struct PumpNotification: Sendable, Equatable, Identifiable {
     public let kind: NotificationKind
     public let title: String
     public let detail: String?
-    public init(id: Int, kind: NotificationKind, title: String, detail: String?) {
-        self.id = id; self.kind = kind; self.title = title; self.detail = detail
+    /// Malfunctions are hardware faults that can't be dismissed remotely (view-only).
+    public let dismissable: Bool
+    public init(id: Int, kind: NotificationKind, title: String, detail: String?, dismissable: Bool = true) {
+        self.id = id; self.kind = kind; self.title = title; self.detail = detail; self.dismissable = dismissable
     }
 }
 
 /// Decodes the active bits of a bitmap into `PumpNotification`s using a name table.
 enum NotificationBitmap {
-    static func decode(_ bitmap: UInt64, kind: NotificationKind, names: [Int: (String, String?)]) -> [PumpNotification] {
+    static func decode(_ bitmap: UInt64, kind: NotificationKind, names: [Int: (String, String?)],
+                       fallbackLabel: String? = nil, dismissable: Bool = true) -> [PumpNotification] {
         var out: [PumpNotification] = []
         for bit in 0..<64 where (bitmap >> UInt64(bit)) & 1 == 1 {
             let info = names[bit]
-            let label = kind == .alarm ? "Alarm" : (kind == .cgmAlert ? "CGM alert" : "Alert")
+            let label = fallbackLabel ?? (kind == .alarm ? "Alarm" : (kind == .cgmAlert ? "CGM alert" : (kind == .reminder ? "Reminder" : "Alert")))
             out.append(PumpNotification(id: bit, kind: kind,
-                                        title: info?.0 ?? "\(label) \(bit)", detail: info?.1))
+                                        title: info?.0 ?? "\(label) \(bit)", detail: info?.1, dismissable: dismissable))
         }
         return out
     }
@@ -143,6 +146,40 @@ public struct CGMAlertStatusRequest: EmptyCurrentStatusRequest {
                                            characteristic: .currentStatus, responseOpCode: 75)
     public var cargo: [UInt8] = []
     public init(emptyCargo: Void = ()) { self.cargo = [] }
+}
+
+/// Active reminders (opcode 73) — dismissable like alerts.
+public struct ReminderStatusResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 73, size: 8, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var bitmap: UInt64 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; bitmap = Bytes.readUint64(raw, 0) }
+    public mutating func parse(_ raw: [UInt8]) { self = ReminderStatusResponse(cargo: raw) }
+    public var notifications: [PumpNotification] {
+        NotificationBitmap.decode(bitmap, kind: .reminder, names: [:])
+    }
+}
+
+/// Reminder status request (opcode 72).
+public struct ReminderStatusRequest: EmptyCurrentStatusRequest {
+    public static let props = MessageProps(opCode: 72, size: 0, type: .request,
+                                           characteristic: .currentStatus, responseOpCode: 73)
+    public var cargo: [UInt8] = []
+    public init(emptyCargo: Void = ()) { self.cargo = [] }
+}
+
+/// Active malfunctions (opcode 119) — hardware faults; view-only (not remotely dismissable).
+public struct MalfunctionBitmaskStatusResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 119, size: 8, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var bitmap: UInt64 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; bitmap = Bytes.readUint64(raw, 0) }
+    public mutating func parse(_ raw: [UInt8]) { self = MalfunctionBitmaskStatusResponse(cargo: raw) }
+    public var notifications: [PumpNotification] {
+        NotificationBitmap.decode(bitmap, kind: .alarm, names: [:], fallbackLabel: "Malfunction", dismissable: false)
+    }
 }
 
 /// Dismisses one notification (opcode 184, **signed** CONTROL). Cargo: notificationId (uint32) +

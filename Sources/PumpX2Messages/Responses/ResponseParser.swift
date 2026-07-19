@@ -38,6 +38,8 @@ public enum ResponseParser {
         AlertStatusResponse.props.opCode:     { AlertStatusResponse(cargo: $0) },
         AlarmStatusResponse.props.opCode:     { AlarmStatusResponse(cargo: $0) },
         CGMAlertStatusResponse.props.opCode:  { CGMAlertStatusResponse(cargo: $0) },
+        ReminderStatusResponse.props.opCode:  { ReminderStatusResponse(cargo: $0) },
+        MalfunctionBitmaskStatusResponse.props.opCode: { MalfunctionBitmaskStatusResponse(cargo: $0) },
     ]
 
     static let expectedSizes: [UInt8: Int] = [
@@ -57,6 +59,8 @@ public enum ResponseParser {
         AlertStatusResponse.props.opCode: AlertStatusResponse.props.size,
         AlarmStatusResponse.props.opCode: AlarmStatusResponse.props.size,
         CGMAlertStatusResponse.props.opCode: CGMAlertStatusResponse.props.size,
+        ReminderStatusResponse.props.opCode: ReminderStatusResponse.props.size,
+        MalfunctionBitmaskStatusResponse.props.opCode: MalfunctionBitmaskStatusResponse.props.size,
     ]
 
     /// Signed responses carry a 24-byte HMAC trailer after the cargo (the declared length
