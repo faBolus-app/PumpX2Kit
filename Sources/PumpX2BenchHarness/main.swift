@@ -38,27 +38,43 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
     let client = PumpBLEClient()
     let pairingCode = ProcessInfo.processInfo.environment["PUMP_PAIRING_CODE"] ?? ""
     var coordinator: PairingCoordinator?
-    enum Mode: Equatable { case scan, monitor, permissionTest, deliverBolus(milliunits: UInt32) }
+    enum Mode: Equatable {
+        case scan, monitor, permissionTest
+        case deliverBolus(milliunits: UInt32)
+        case carbBolus(carbs: Double, bg: Int?)
+    }
     let mode: Mode
     var pollTimer: Timer?
     var authKey: [UInt8] = []
     var signingTimestamp: UInt32 = 0
     var permissionSent = false
     var currentBolusId: Int = 0
-    static let bolusTypeFood2 = 8   // manual units-only bolus (controlX2 convention)
+    // Bolus type bits (controlX2 convention): FOOD2 always; +FOOD1 carbs; +CORRECTION.
+    static let food2 = 8, food1 = 1, correction = 2
+
+    // Carb-bolus computed plan (milliunits) + inputs collected from the pump.
+    var carbGrams: Double = 0
+    var carbBg: Int?
+    var calc: BolusCalcDataSnapshotResponse?
+    var iobMilliunits: UInt32?
+    var haveTime = false
+    var planTotalMU: UInt32 = 0, planFoodMU: UInt32 = 0, planCorrectionMU: UInt32 = 0, planBits = 0
 
     init(mode: Mode) {
         self.mode = mode
         super.init()
         switch mode {
         case .permissionTest: client.writePolicy = .allowNonDelivery
-        case .deliverBolus:    client.writePolicy = .allowDelivery   // BENCH SALINE ONLY
-        default:               client.writePolicy = .readOnly
+        case .deliverBolus, .carbBolus: client.writePolicy = .allowDelivery   // BENCH SALINE ONLY
+        default: client.writePolicy = .readOnly
         }
         client.delegate = self
     }
 
-    var isBolusMode: Bool { if case .deliverBolus = mode { return true } else { return false } }
+    var isBolusMode: Bool {
+        switch mode { case .deliverBolus, .carbBolus: return true; default: return false }
+    }
+    var isCarbMode: Bool { if case .carbBolus = mode { return true } else { return false } }
 
     func pumpClient(_ c: PumpBLEClient, didChange state: PumpBLEClient.State) {
         print("[state] \(state)")
@@ -89,6 +105,11 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
                 case .permissionTest, .deliverBolus:
                     print("[write] reading pump time for signing…")
                     try? c.send(TimeSinceResetRequest())   // read (allowed); triggers the signed flow
+                case .carbBolus:
+                    print("[carb-bolus] reading pump time + calculator settings (carb ratio/ISF/target) + IOB…")
+                    try? c.send(TimeSinceResetRequest())
+                    try? c.send(BolusCalcDataSnapshotRequest())
+                    try? c.send(ControlIQIOBRequest())
                 case .scan: break
                 }
             }
@@ -127,10 +148,55 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
         do {
             try client.send(
                 InitiateBolusRequest(totalVolume: milliunits, bolusID: bolusId,
-                                     bolusTypeBitmask: Self.bolusTypeFood2),
+                                     bolusTypeBitmask: Self.food2),
                 authenticationKey: authKey, pumpTimeSinceReset: signingTimestamp,
                 allowInsulinDelivery: true)
         } catch { print("[bolus] initiate failed: \(error)") }
+    }
+
+    /// Once pump time + calculator snapshot + IOB are all in, compute the carb-bolus plan and
+    /// begin the signed permission→initiate flow (carbs → units, the way controlX2 does).
+    func maybeComputeCarbBolus() {
+        guard isCarbMode, !permissionSent, haveTime, let calc, let iobMU = iobMilliunits else { return }
+        let carbRatio = Double(calc.carbRatio)                 // ×1000 g/u
+        let foodMU = carbRatio > 0 ? Int((carbGrams * 1_000_000 / carbRatio).rounded()) : 0
+        var rawCorrMU = 0
+        if let bg = carbBg, calc.isf > 0 {
+            rawCorrMU = max(0, Int((Double(bg - calc.targetBg) * 1000 / Double(calc.isf)).rounded()))
+        }
+        let corrAfterIob = max(0, rawCorrMU - Int(iobMU))
+        var total = Int((Double(foodMU + corrAfterIob) / 50).rounded()) * 50   // 0.05 u step
+        total = min(max(total, 0), 2000)                       // bench clamp
+        planFoodMU = UInt32(min(foodMU, total))
+        planCorrectionMU = UInt32(total) - planFoodMU
+        planTotalMU = UInt32(total)
+        planBits = Self.food2 | (carbGrams > 0 ? Self.food1 : 0) | (corrAfterIob > 0 ? Self.correction : 0)
+
+        print(String(format: "[carb-bolus] carbs=%.0fg bg=%@ | carbRatio=%.1f g/u ISF=%d target=%d IOB=%.2fu",
+                     carbGrams, carbBg.map { "\($0)" } ?? "—",
+                     calc.carbRatioGramsPerUnit, calc.isf, calc.targetBg, Double(iobMU) / 1000.0))
+        print(String(format: "[carb-bolus] → food %.2fu + correction %.2fu = TOTAL %.2f u (verify against the pump's calculator)",
+                     Double(planFoodMU) / 1000.0, Double(planCorrectionMU) / 1000.0, Double(planTotalMU) / 1000.0))
+        guard planTotalMU >= 50 else {
+            print("[carb-bolus] computed dose < 0.05 u — nothing to deliver. Stopping.")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { exit(0) }
+            return
+        }
+        sendSignedPermission()
+    }
+
+    /// Deliver the computed carb bolus with full metadata (food/correction/carbs/bg/iob).
+    func initiateCarbBolus(bolusId: Int) {
+        currentBolusId = bolusId
+        print(String(format: "[carb-bolus] initiating %.2f u SALINE (bolusId %d)…", Double(planTotalMU) / 1000.0, bolusId))
+        do {
+            try client.send(
+                InitiateBolusRequest(totalVolume: planTotalMU, bolusID: bolusId, bolusTypeBitmask: planBits,
+                                     foodVolume: planFoodMU, correctionVolume: planCorrectionMU,
+                                     bolusCarbs: Int(carbGrams), bolusBG: carbBg ?? 0,
+                                     bolusIOB: iobMilliunits ?? 0),
+                authenticationKey: authKey, pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: true)
+        } catch { print("[carb-bolus] initiate failed: \(error)") }
     }
 
     /// Cancel an in-progress bolus (SIGINT / Ctrl-C).
@@ -174,6 +240,7 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
             case let m as ControlIQIOBResponse:
                 // iobUnits uses swan6hrIOB (matches the pump display, verified on hardware).
                 print("[status] IOB = \(m.iobUnits) u")
+                if isCarbMode { iobMilliunits = m.swan6hrIOB; maybeComputeCarbBolus() }
             case let m as InsulinStatusResponse: print("[status] insulin remaining = \(m.currentInsulinAmount) u")
             case let m as CurrentBatteryV2Response: print("[status] battery = \(m.batteryPercent)%")
             case let m as CurrentEgvGuiDataV2Response:
@@ -186,10 +253,13 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
                 print("[status] calc — carbRatio raw=\(m.carbRatio) (~\(m.carbRatioGramsPerUnit) g/u) "
                     + "isf/correctionFactor=\(m.isf) mg/dL/u targetBG=\(m.targetBg) mg/dL "
                     + "carbEntryEnabled=\(m.carbEntryEnabled) maxBolus=\(Double(m.maxBolusAmount)/1000.0)u")
+                if isCarbMode { calc = m; maybeComputeCarbBolus() }
             case let m as TimeSinceResetResponse:
-                if (mode == .permissionTest || isBolusMode) && !permissionSent {
-                    signingTimestamp = m.signingTimestamp
-                    print("[time] currentTime=\(m.currentTime) pumpTimeSinceReset=\(m.pumpTimeSinceReset) → signing with \(signingTimestamp)")
+                signingTimestamp = m.signingTimestamp
+                print("[time] currentTime=\(m.currentTime) pumpTimeSinceReset=\(m.pumpTimeSinceReset) → signing with \(signingTimestamp)")
+                if isCarbMode {
+                    haveTime = true; maybeComputeCarbBolus()
+                } else if (mode == .permissionTest || isBolusMode) && !permissionSent {
                     sendSignedPermission()
                 }
             case let m as BolusPermissionResponse:
@@ -198,6 +268,9 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
                 if case let .deliverBolus(mu) = mode {
                     print("[permission] ✅ granted — proceeding to SALINE delivery")
                     initiateBolus(milliunits: mu, bolusId: m.bolusId)
+                } else if isCarbMode {
+                    print("[permission] ✅ granted — proceeding to carb-bolus SALINE delivery")
+                    initiateCarbBolus(bolusId: m.bolusId)
                 } else {
                     print("[permission] ✅ pump ACCEPTED the signature and granted permission (no insulin delivered)")
                     releasePermission(bolusId: m.bolusId)
@@ -263,8 +336,31 @@ case "bolus":
     print("⚠️  SALINE BOLUS \(Double(mu)/1000.0) u — bench only. Pump must dispense saline into a")
     print("container on a scale. Weigh before/after. Ctrl-C cancels mid-delivery.")
     RunLoop.main.run()
+case "carb-bolus":
+    // Carbs → units using the pump's carb ratio / ISF / target + IOB, then deliver. SALINE ONLY.
+    guard args.count >= 2, let carbs = Double(args[1]) else {
+        print("usage: carb-bolus <grams> [bg]   e.g. 'carb-bolus 30' or 'carb-bolus 30 160'"); exit(2)
+    }
+    let bg = args.count >= 3 ? Int(args[2]) : nil
+    guard ProcessInfo.processInfo.environment["PUMPX2_DELIVER_SALINE"] == "1" else {
+        print("REFUSED. Delivers a real bolus. Set PUMPX2_DELIVER_SALINE=1 to confirm SALINE on a scale.")
+        exit(2)
+    }
+    guard carbs > 0 && carbs <= 200 else { print("REFUSED. Enter 1–200 g."); exit(2) }
+    let monitor = Monitor(mode: .carbBolus(carbs: carbs, bg: bg))
+    monitor.carbGrams = carbs; monitor.carbBg = bg
+    signal(SIGINT, SIG_IGN)
+    let sigint = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
+    sigint.setEventHandler {
+        MainActor.assumeIsolated { monitor.cancelBolus() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { exit(0) }
+    }
+    sigint.resume()
+    print("⚠️  CARB BOLUS \(carbs) g\(bg.map { ", BG \($0)" } ?? "") — computes units from the pump's")
+    print("carb ratio/ISF/target, then delivers SALINE (bench, on a scale, capped 2.0 u). Ctrl-C cancels.")
+    RunLoop.main.run()
 default:
     print("unknown command: \(args[0])")
-    print("commands: (none)=self-check, scan, monitor, permission-test, bolus <milliunits>")
+    print("commands: (none)=self-check, scan, monitor, permission-test, bolus <milliunits>, carb-bolus <grams> [bg]")
     exit(2)
 }
