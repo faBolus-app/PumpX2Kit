@@ -54,7 +54,8 @@ public final class EcJpakeContext {
 public final class JpakeAuth {
     public enum JpakeAuthError: Error { case keyConfirmationFailed }
 
-    private let ec: EcJpakeContext
+    /// nil in resume mode (rounds 1–2 are skipped; the derived secret is already known).
+    private let ec: EcJpakeContext?
     public let appInstanceId: Int
 
     public private(set) var derivedSecret: [UInt8] = []
@@ -63,9 +64,18 @@ public final class JpakeAuth {
     public private(set) var authKey: [UInt8] = []
     private var clientNonce4: [UInt8] = []
 
+    /// Full pairing with the 6-digit code (runs EC-JPAKE rounds 1–2 + derive).
     public init(pairingCode: String, appInstanceId: Int = 0) throws {
         self.appInstanceId = appInstanceId
         self.ec = try EcJpakeContext(role: .client, secret: Self.pairingCodeToBytes(pairingCode))
+    }
+
+    /// Resume ("quick-pair") using a derived secret from a prior full pairing — no code, no
+    /// EC-JPAKE rounds 1–2. Only the session-key + key-confirmation rounds (3–4) run.
+    public init(resumeDerivedSecret: [UInt8], appInstanceId: Int = 0) {
+        self.appInstanceId = appInstanceId
+        self.ec = nil
+        self.derivedSecret = resumeDerivedSecret
     }
 
     /// The 6-digit code's ASCII bytes (matches upstream `pairingCodeToBytes`).
@@ -73,11 +83,11 @@ public final class JpakeAuth {
         code.compactMap { $0.isNumber ? $0.asciiValue : nil }
     }
 
-    // MARK: rounds 1–2
+    // MARK: rounds 1–2 (full pairing only)
 
     /// Writes round one and splits it into the 1a/1b request messages.
     public func makeRound1Requests() throws -> (Jpake1aRequest, Jpake1bRequest) {
-        let round1 = try ec.writeRoundOne()   // 330 bytes for secp256r1
+        let round1 = try ec!.writeRoundOne()   // 330 bytes for secp256r1
         let mid = round1.count / 2
         return (Jpake1aRequest(appInstanceId: appInstanceId, centralChallenge: Array(round1[0..<mid])),
                 Jpake1bRequest(appInstanceId: appInstanceId, centralChallenge: Array(round1[mid...])))
@@ -85,19 +95,24 @@ public final class JpakeAuth {
 
     /// Feeds the pump's round one (1a challenge ++ 1b challenge) into the context.
     public func readServerRound1(challenge1a: [UInt8], challenge1b: [UInt8]) throws {
-        try ec.readRoundOne(challenge1a + challenge1b)
+        try ec!.readRoundOne(challenge1a + challenge1b)
     }
 
     public func makeRound2Request() throws -> Jpake2Request {
-        Jpake2Request(appInstanceId: appInstanceId, centralChallenge: try ec.writeRoundTwo())
+        Jpake2Request(appInstanceId: appInstanceId, centralChallenge: try ec!.writeRoundTwo())
     }
 
-    public func readServerRound2(challenge: [UInt8]) throws { try ec.readRoundTwo(challenge) }
+    /// Round 3 request (session-key exchange) — the first message in a resume handshake.
+    public func makeRound3Request() -> Jpake3SessionKeyRequest {
+        Jpake3SessionKeyRequest(challengeParam: 0)
+    }
+
+    public func readServerRound2(challenge: [UInt8]) throws { try ec!.readRoundTwo(challenge) }
 
     /// Derives the pre-master secret (must follow rounds 1 and 2).
     @discardableResult
     public func derive() throws -> [UInt8] {
-        derivedSecret = try ec.deriveSecret()
+        derivedSecret = try ec!.deriveSecret()
         return derivedSecret
     }
 

@@ -14,6 +14,7 @@ public final class PairingCoordinator {
     public enum PairingError: Error, Equatable { case unexpectedResponse(opcode: UInt8), keyConfirmationFailed, malformedFrame }
 
     private let auth: JpakeAuth
+    private let isResume: Bool
     public private(set) var step: Step = .idle
 
     /// Transport hook: send a pairing request to the pump (AUTHORIZATION characteristic).
@@ -25,17 +26,33 @@ public final class PairingCoordinator {
     private var pumpRound1a: [UInt8] = []
     private var r1b: Jpake1bRequest?
 
+    /// The derived secret to persist after a full pairing, enabling later resume.
+    public var derivedSecret: [UInt8] { auth.derivedSecret }
+
+    /// Full pairing with the 6-digit code.
     public init(pairingCode: String, appInstanceId: Int = 0) throws {
         self.auth = try JpakeAuth(pairingCode: pairingCode, appInstanceId: appInstanceId)
+        self.isResume = false
     }
 
-    /// Begins pairing by sending Jpake1a.
+    /// Resume ("quick-pair") using a stored derived secret — no 6-digit code, rounds 3–4 only.
+    public init(resumeDerivedSecret: [UInt8], appInstanceId: Int = 0) {
+        self.auth = JpakeAuth(resumeDerivedSecret: resumeDerivedSecret, appInstanceId: appInstanceId)
+        self.isResume = true
+    }
+
+    /// Begins the handshake: full pairing sends Jpake1a; resume jumps straight to round 3.
     public func start() {
         do {
-            let (a, b) = try auth.makeRound1Requests()
-            r1b = b
-            step = .sent1a
-            onSendRequest?(a)
+            if isResume {
+                step = .sent3
+                onSendRequest?(auth.makeRound3Request())
+            } else {
+                let (a, b) = try auth.makeRound1Requests()
+                r1b = b
+                step = .sent1a
+                onSendRequest?(a)
+            }
         } catch { fail(error) }
     }
 

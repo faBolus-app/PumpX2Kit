@@ -64,4 +64,32 @@ import PumpX2Messages
         #expect(key == Crypto.hkdf(nonce: serverNonce3, keyMaterial: pumpDerived))
         #expect(!key.isEmpty)
     }
+
+    /// Resume ("quick-pair"): with a stored derived secret, only rounds 3–4 run (no code), and
+    /// the session signing key is derived correctly.
+    @Test func resumePairsWithStoredSecret() throws {
+        let secret = (0..<32).map { UInt8($0 &+ 7) }   // a secret from a prior full pairing
+        let coord = PairingCoordinator(resumeDerivedSecret: secret)
+        var serverNonce3: [UInt8] = []
+        var pairedKey: [UInt8]?
+        coord.onError = { Issue.record("resume error: \($0)") }
+        coord.onPaired = { key, _ in pairedKey = key }
+        coord.onSendRequest = { msg in
+            switch msg {
+            case is Jpake3SessionKeyRequest:
+                serverNonce3 = JpakeAuth.randomBytes(8)
+                coord.handle(frame: self.frame(39, self.withAppId(serverNonce3 + [UInt8](repeating: 0, count: 8))))
+            case let m as Jpake4KeyConfirmationRequest:
+                let key = Crypto.hkdf(nonce: serverNonce3, keyMaterial: secret)
+                #expect(Crypto.hmacSha256(data: m.nonce, key: key) == m.hashDigest)
+                let sn4 = JpakeAuth.randomBytes(8)
+                let sh = Crypto.hmacSha256(data: sn4, key: key)
+                coord.handle(frame: self.frame(41, self.withAppId(sn4 + [UInt8](repeating: 0, count: 8) + sh)))
+            default: Issue.record("unexpected request in resume: \(type(of: msg))")
+            }
+        }
+        coord.start()
+        #expect(coord.step == .paired)
+        #expect(pairedKey == Crypto.hkdf(nonce: serverNonce3, keyMaterial: secret))
+    }
 }
