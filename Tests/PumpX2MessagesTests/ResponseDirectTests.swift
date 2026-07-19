@@ -27,6 +27,44 @@ import Testing
         #expect(m.maxBolusAmount == 25000)
     }
 
+    /// HistoryLogStatusResponse: count + first/last sequence numbers (uint32 LE @0/4/8).
+    @Test func historyLogStatusOffsets() {
+        var cargo = [UInt8](repeating: 0, count: 12)
+        let n = Bytes.toUint32(50_000);  for i in 0..<4 { cargo[0 + i] = n[i] }
+        let f = Bytes.toUint32(1_000);   for i in 0..<4 { cargo[4 + i] = f[i] }
+        let l = Bytes.toUint32(50_999);  for i in 0..<4 { cargo[8 + i] = l[i] }
+        let m = HistoryLogStatusResponse(cargo: cargo)
+        #expect(m.numEntries == 50_000)
+        #expect(m.firstSequenceNum == 1_000)
+        #expect(m.lastSequenceNum == 50_999)
+    }
+
+    /// HistoryLogStreamResponse: pull CGM readings out of a stream frame, skipping non-CGM
+    /// records. Builds one Dexcom G6 CGM record (typeId 256) and one non-CGM record (typeId 1).
+    @Test func historyLogStreamCgmParsing() {
+        func record(typeId: Int, pumpTimeSec: UInt32, seq: UInt32, mgdl: Int) -> [UInt8] {
+            var r = [UInt8](repeating: 0, count: 26)
+            let t = Bytes.firstTwoBytesLittleEndian(typeId); r[0] = t[0]; r[1] = t[1]
+            let pt = Bytes.toUint32(pumpTimeSec); for i in 0..<4 { r[2 + i] = pt[i] }
+            let sq = Bytes.toUint32(seq);         for i in 0..<4 { r[6 + i] = sq[i] }
+            let g = Bytes.firstTwoBytesLittleEndian(mgdl); r[16] = g[0]; r[17] = g[1]
+            return r
+        }
+        let cgm = record(typeId: 256, pumpTimeSec: 555_000, seq: 42, mgdl: 142)
+        let other = record(typeId: 1, pumpTimeSec: 555_060, seq: 43, mgdl: 0)
+        let cargo: [UInt8] = [2, 7] + cgm + other   // numberOfHistoryLogs=2, streamId=7
+
+        let m = HistoryLogStreamResponse(cargo: cargo)
+        #expect(m.numberOfHistoryLogs == 2)
+        #expect(m.streamId == 7)
+        #expect(m.records.count == 2)
+        let readings = m.cgmReadings
+        #expect(readings.count == 1)
+        #expect(readings.first?.glucoseMgdl == 142)
+        #expect(readings.first?.pumpTimeSec == 555_000)
+        #expect(readings.first?.sequenceNum == 42)
+    }
+
     /// EGV V2 parses a 9-byte cargo (Control-IQ+ firmware appends a trailing byte); a VALID
     /// status (1) with an in-range reading is displayable.
     @Test func egvV2NineByteCargo() {

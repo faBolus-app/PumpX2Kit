@@ -50,6 +50,7 @@ struct OracleParityTests {
         ("AlertStatusRequest", AlertStatusRequest()),
         ("AlarmStatusRequest", AlarmStatusRequest()),
         ("MalfunctionStatusRequest", MalfunctionStatusRequest()),
+        ("HistoryLogStatusRequest", HistoryLogStatusRequest()),
     ]
 
     @Test(arguments: statusReads)
@@ -58,6 +59,14 @@ struct OracleParityTests {
         let oracle = try OracleRunner.encodePackets(txId: txId, messageName: name)
         let swift = try swiftPackets(message, txId: txId)
         #expect(swift == oracle, "\(name): swift=\(swift) oracle=\(oracle)")
+    }
+
+    /// HistoryLogRequest carries a 5-byte cargo (startLog uint32 + numberOfLogs byte).
+    @Test func historyLogRequestMatchesOracle() throws {
+        let oracle = try OracleRunner.encode(
+            txId: 8, messageName: "HistoryLogRequest", json: "[1000, 10]").packets
+        let swift = try swiftPackets(HistoryLogRequest(startLog: 1000, numberOfLogs: 10), txId: 8)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
     }
 
     // MARK: - Authentication messages

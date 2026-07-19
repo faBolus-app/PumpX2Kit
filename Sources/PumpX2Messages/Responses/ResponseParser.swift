@@ -31,6 +31,10 @@ public enum ResponseParser {
         BolusCalcDataSnapshotResponse.props.opCode: { BolusCalcDataSnapshotResponse(cargo: $0) },
         BolusPermissionResponse.props.opCode: { BolusPermissionResponse(cargo: $0) },
         InitiateBolusResponse.props.opCode:   { InitiateBolusResponse(cargo: $0) },
+        HistoryLogStatusResponse.props.opCode: { HistoryLogStatusResponse(cargo: $0) },
+        HistoryLogResponse.props.opCode:      { HistoryLogResponse(cargo: $0) },
+        // Variable-size stream frame on the HISTORY_LOG characteristic — no fixed expectedSize.
+        HistoryLogStreamResponse.props.opCode: { HistoryLogStreamResponse(cargo: $0) },
     ]
 
     static let expectedSizes: [UInt8: Int] = [
@@ -44,6 +48,9 @@ public enum ResponseParser {
         BolusCalcDataSnapshotResponse.props.opCode: BolusCalcDataSnapshotResponse.props.size,
         BolusPermissionResponse.props.opCode: BolusPermissionResponse.props.size,
         InitiateBolusResponse.props.opCode: InitiateBolusResponse.props.size,
+        HistoryLogStatusResponse.props.opCode: HistoryLogStatusResponse.props.size,
+        HistoryLogResponse.props.opCode: HistoryLogResponse.props.size,
+        // HistoryLogStreamResponse omitted: variable-size stream frame.
     ]
 
     /// Signed responses carry a 24-byte HMAC trailer after the cargo (the declared length
