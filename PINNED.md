@@ -13,13 +13,23 @@ bench-revalidated before adoption (see the upstream-sync workflow in the plan / 
 
 ## Pump firmware
 
-**TODO (Milestone 1):** record the exact t:slim X2 / Mobi firmware version of the bench
-pump the port is validated against. The protocol can break on a future firmware update;
-this port is pinned to the tested firmware and treated as disposable against vendor changes.
+Recorded from the bench pump's Pump Info screen (2026-07-18). The protocol can break on a
+future firmware update; this port is pinned to this firmware and treated as disposable against
+vendor changes.
 
-| Bench pump model | _TBD_ |
-| Firmware version | _TBD_ |
-| Pairing type | _TBD (legacy 16-char CentralChallenge vs. modern 6-digit JPAKE)_ |
+| Field | Value |
+| --- | --- |
+| Bench pump model | Tandem **t:slim X2** |
+| t:slim Software | **Control-IQ+ 7.10.2** |
+| ARM S/W Version | `da8923cc9d010d07` |
+| MSP S/W Version | `da8923cc9d010d07` |
+| S/W Part Number | `1017490 000` |
+| Pairing type | **6-digit JPAKE** (firmware ≫ v7.7, so legacy 16-char does not apply) |
+
+**Implication:** pairing uses the modern EC-JPAKE handshake (`PumpX2Auth.JpakeAuth`, mbedTLS
+secp256r1/SHA-256). The legacy 16-char path is retained only for older pumps. Remaining
+validation before a bench bolus: JPAKE **oracle-interop** (Swift client ↔ cliparser
+`jpake-server`, derived-secret match) and then real pairing against this pump.
 
 ## Toolchain notes
 
