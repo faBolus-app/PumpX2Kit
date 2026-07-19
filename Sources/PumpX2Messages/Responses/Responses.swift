@@ -84,14 +84,19 @@ public struct CurrentEgvGuiDataV2Response: ResponseMessage {
         trendRate = Int(Int8(bitPattern: raw[7]))
     }
     public mutating func parse(_ raw: [UInt8]) { self = CurrentEgvGuiDataV2Response(cargo: raw) }
-    /// A coarse Loop-style trend arrow from the sign/magnitude of `trendRate`.
+    /// `trendRate` is a signed byte in 0.1 mg/dL/min units (matches the pump's ±12.7 range).
+    public var trendRateMgDlPerMin: Double { Double(trendRate) / 10.0 }
+    /// Dexcom-style 7-category trend arrow, matching the pump display.
     public var trendArrow: String {
-        switch trendRate {
-        case ..<(-20): return "⇊"
-        case (-20)..<(-5): return "↓"
-        case (-5)..<6: return "→"
-        case 6..<21: return "↑"
-        default: return "⇈"
+        let r = trendRateMgDlPerMin
+        switch r {
+        case ..<(-3): return "⇊"   // falling rapidly (> 3 mg/dL/min down)
+        case (-3)..<(-2): return "↓"   // falling
+        case (-2)..<(-1): return "↘"   // falling slightly
+        case (-1)...1: return "→"      // steady
+        case 1..<2: return "↗"         // rising slightly
+        case 2..<3: return "↑"         // rising
+        default: return "⇈"            // rising rapidly
         }
     }
     /// EGV status per upstream: 0=INVALID, 1=VALID, 2=LOW, 3=HIGH, 4=UNAVAILABLE.
