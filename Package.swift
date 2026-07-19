@@ -44,8 +44,15 @@ let package = Package(
         // (CMbedTLSJPAKE compiles the vendored mbedTLS EC-JPAKE sources; see above.)
 
         // Core Bluetooth central transport. Platform-agnostic (iOS + watchOS): imports
-        // CoreBluetooth only, never UIKit.
-        .target(name: "PumpX2BLE", dependencies: ["PumpX2Messages", "PumpX2Auth"]),
+        // CoreBluetooth only, never UIKit. Built in Swift 5 language mode: this target is
+        // CoreBluetooth delegate glue whose non-Sendable CB objects are main-queue-confined,
+        // which the Swift 6 sending checker can't express without pervasive unsafe escapes. The
+        // @MainActor contract on PumpBLEClient/PumpBLEClientDelegate still holds for v6 callers.
+        .target(
+            name: "PumpX2BLE",
+            dependencies: ["PumpX2Messages", "PumpX2Auth"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
 
         // Bench/oracle CLI: connect → status → saline bolus → cancel.
         .executableTarget(

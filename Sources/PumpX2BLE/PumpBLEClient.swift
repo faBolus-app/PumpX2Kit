@@ -2,7 +2,8 @@ import Foundation
 import CoreBluetooth
 import PumpX2Messages
 
-/// Events emitted by `PumpBLEClient`. Delivered on the main queue.
+/// Events emitted by `PumpBLEClient`, delivered on the main actor.
+@MainActor
 public protocol PumpBLEClientDelegate: AnyObject {
     func pumpClient(_ client: PumpBLEClient, didChange state: PumpBLEClient.State)
     /// A pump was discovered during scanning.
@@ -22,6 +23,7 @@ public protocol PumpBLEClientDelegate: AnyObject {
 ///
 /// NOT yet hardware-tested — no pump/phone hardware available. Structure follows the
 /// reference; behavior must be bench-validated before it drives a pump.
+@MainActor
 public final class PumpBLEClient: NSObject {
     public enum State: Equatable, Sendable {
         case poweredOff, unauthorized, unsupported, resetting, unknown
@@ -32,7 +34,15 @@ public final class PumpBLEClient: NSObject {
         case notReady
         case unknownCharacteristic(Characteristic)
         case writeFailed(Characteristic)
+        /// A CONTROL/insulin-affecting message was attempted while `readOnly` is set.
+        case readOnlyModeBlockedWrite(opcode: UInt8)
     }
+
+    /// Read-only safety mode. When true, `send()` HARD-REFUSES any CONTROL-characteristic or
+    /// insulin-affecting/signed message — only status reads (and the AUTHORIZATION pairing
+    /// handshake) are allowed. Use this for the first bench sessions so the app physically
+    /// cannot command a bolus. Defaults to true; a caller must opt out explicitly.
+    public var readOnly: Bool = true
 
     public weak var delegate: PumpBLEClientDelegate?
     public private(set) var state: State = .unknown {
@@ -86,6 +96,14 @@ public final class PumpBLEClient: NSObject {
         pumpTimeSinceReset: UInt32 = 0,
         allowInsulinDelivery: Bool = false
     ) throws -> UInt8 {
+        // Read-only interlock: refuse anything that could change pump state. AUTHORIZATION
+        // (pairing) and CURRENT_STATUS (reads) are permitted; CONTROL and any signed /
+        // insulin-affecting message are blocked.
+        if readOnly && (message.characteristic == .control
+                        || message.signed
+                        || message.props.modifiesInsulinDelivery) {
+            throw ClientError.readOnlyModeBlockedWrite(opcode: message.opCode)
+        }
         guard state == .ready, let peripheral,
               let cbChar = characteristics[message.characteristic] else {
             throw ClientError.notReady
@@ -106,8 +124,8 @@ public final class PumpBLEClient: NSObject {
 
     // MARK: - Helpers
 
-    // The central is created with `queue: .main`, so all delegate callbacks (and thus all
-    // state mutations / notifications) happen on the main thread; call the delegate directly.
+    // The class is @MainActor; the CB delegate methods (nonisolated) hop here via
+    // assumeIsolated, so this runs on the main actor and can call the @MainActor delegate.
     private func notify(_ block: (PumpBLEClientDelegate) -> Void) {
         if let d = delegate { block(d) }
     }
@@ -125,84 +143,100 @@ public final class PumpBLEClient: NSObject {
 }
 
 // MARK: - CBCentralManagerDelegate
+//
+// CoreBluetooth delegate methods are nonisolated by protocol, but the central is created with
+// `queue: .main`, so they always run on the main thread — `MainActor.assumeIsolated` hops into
+// the @MainActor instance soundly.
 
 extension PumpBLEClient: CBCentralManagerDelegate {
-    public func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        state = mapCentralState(central.state)
+    public nonisolated func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        MainActor.assumeIsolated { state = mapCentralState(central.state) }
     }
 
-    public func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
-                               advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        notify { $0.pumpClient(self, didDiscover: peripheral, rssi: RSSI.intValue) }
+    public nonisolated func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
+                                           advertisementData: [String: Any], rssi RSSI: NSNumber) {
+        MainActor.assumeIsolated { notify { $0.pumpClient(self, didDiscover: peripheral, rssi: RSSI.intValue) } }
     }
 
-    public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        state = .discovering
-        peripheral.discoverServices([CBUUID(nsuuid: ServiceUUID.pumpService)])
+    public nonisolated func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        MainActor.assumeIsolated {
+            state = .discovering
+            peripheral.discoverServices([CBUUID(nsuuid: ServiceUUID.pumpService)])
+        }
     }
 
-    public func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral,
-                               error: Error?) {
-        characteristics.removeAll()
-        reassembly.removeAll()
-        state = .disconnected
-        if let error { notify { $0.pumpClient(self, didError: error) } }
+    public nonisolated func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral,
+                                           error: Error?) {
+        MainActor.assumeIsolated {
+            characteristics.removeAll()
+            reassembly.removeAll()
+            state = .disconnected
+            if let error { notify { $0.pumpClient(self, didError: error) } }
+        }
     }
 
-    public func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral,
-                               error: Error?) {
-        state = .disconnected
-        if let error { notify { $0.pumpClient(self, didError: error) } }
+    public nonisolated func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral,
+                                           error: Error?) {
+        MainActor.assumeIsolated {
+            state = .disconnected
+            if let error { notify { $0.pumpClient(self, didError: error) } }
+        }
     }
 }
 
 // MARK: - CBPeripheralDelegate
 
 extension PumpBLEClient: CBPeripheralDelegate {
-    public func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
-        if let error { notify { $0.pumpClient(self, didError: error) }; return }
-        let pumpUUID = CBUUID(nsuuid: ServiceUUID.pumpService)
-        for service in peripheral.services ?? [] where service.uuid == pumpUUID {
-            peripheral.discoverCharacteristics(nil, for: service)
-        }
-    }
-
-    public func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService,
-                           error: Error?) {
-        if let error { notify { $0.pumpClient(self, didError: error) }; return }
-        for cb in service.characteristics ?? [] {
-            guard let mapped = Characteristic.of(uuid: cb.uuid.uuidValue) else { continue }
-            characteristics[mapped] = cb
-            if ServiceUUID.notificationCharacteristics.contains(mapped),
-               cb.properties.contains(.notify) {
-                peripheral.setNotifyValue(true, for: cb)
+    public nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        MainActor.assumeIsolated {
+            if let error { notify { $0.pumpClient(self, didError: error) }; return }
+            let pumpUUID = CBUUID(nsuuid: ServiceUUID.pumpService)
+            for service in peripheral.services ?? [] where service.uuid == pumpUUID {
+                peripheral.discoverCharacteristics(nil, for: service)
             }
         }
-        // Once the messaging characteristics are present, we're ready. (MTU on iOS is
-        // negotiated automatically; there's no explicit requestMtu like Android.)
-        if characteristics[.currentStatus] != nil && characteristics[.authorization] != nil {
-            state = .ready
-            notify { $0.pumpClientDidBecomeReady(self) }
+    }
+
+    public nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService,
+                                       error: Error?) {
+        MainActor.assumeIsolated {
+            if let error { notify { $0.pumpClient(self, didError: error) }; return }
+            for cb in service.characteristics ?? [] {
+                guard let mapped = Characteristic.of(uuid: cb.uuid.uuidValue) else { continue }
+                characteristics[mapped] = cb
+                if ServiceUUID.notificationCharacteristics.contains(mapped),
+                   cb.properties.contains(.notify) {
+                    peripheral.setNotifyValue(true, for: cb)
+                }
+            }
+            // Once the messaging characteristics are present, we're ready. (MTU on iOS is
+            // negotiated automatically; there's no explicit requestMtu like Android.)
+            if characteristics[.currentStatus] != nil && characteristics[.authorization] != nil {
+                state = .ready
+                notify { $0.pumpClientDidBecomeReady(self) }
+            }
         }
     }
 
-    public func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic,
-                           error: Error?) {
-        if let error { notify { $0.pumpClient(self, didError: error) }; return }
-        guard let mapped = Characteristic.of(uuid: characteristic.uuid.uuidValue),
-              let data = characteristic.value else { return }
-        var reassembler = reassembly[mapped] ?? PacketReassembler()
-        if let frame = reassembler.ingest([UInt8](data)) {
-            reassembly[mapped] = PacketReassembler()
-            notify { $0.pumpClient(self, didReceiveFrame: frame, on: mapped) }
-        } else {
-            reassembly[mapped] = reassembler
+    public nonisolated func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic,
+                                       error: Error?) {
+        MainActor.assumeIsolated {
+            if let error { notify { $0.pumpClient(self, didError: error) }; return }
+            guard let mapped = Characteristic.of(uuid: characteristic.uuid.uuidValue),
+                  let data = characteristic.value else { return }
+            var reassembler = reassembly[mapped] ?? PacketReassembler()
+            if let frame = reassembler.ingest([UInt8](data)) {
+                reassembly[mapped] = PacketReassembler()
+                notify { $0.pumpClient(self, didReceiveFrame: frame, on: mapped) }
+            } else {
+                reassembly[mapped] = reassembler
+            }
         }
     }
 
-    public func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic,
-                           error: Error?) {
-        if let error { notify { $0.pumpClient(self, didError: error) } }
+    public nonisolated func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic,
+                                       error: Error?) {
+        MainActor.assumeIsolated { if let error { notify { $0.pumpClient(self, didError: error) } } }
     }
 }
 

@@ -10,13 +10,14 @@ import PumpX2BLE
 // dispensing saline into a container on a scale — NEVER on a body.
 //
 // Modes:
-//   (no args)            serialization self-check (no BLE) — always works
-//   scan                 scan for pumps and print discoveries
-//   status               connect to first pump, read API version + status, print frames
-//   bolus <milliunits>   connect, pair, permission → initiate → status → cancel
+//   (no args)   serialization self-check (no BLE) — always works
+//   scan        scan for pumps and print discoveries
+//   monitor     READ-ONLY: connect → JPAKE pair (6-digit) → poll status reads. Writes that
+//               could change pump state are hard-blocked (client.readOnly). This is the safe
+//               first hardware test. Set PUMP_PAIRING_CODE=<6 digits>.
 //
-// Signed operations require env: PUMP_PAIRING_CODE (16-char legacy), and once known,
-// PUMP_TIME_SINCE_RESET. JPAKE pairing is not yet supported (see docs/OPEN_QUESTIONS.md).
+// A bolus/delivery mode is intentionally NOT provided here yet — deliver via the app once the
+// read-only monitor is validated on the bench.
 
 let args = Array(CommandLine.arguments.dropFirst())
 
@@ -30,80 +31,99 @@ func serializationSelfCheck() {
         + "cancel=0x\(String(CancelBolusRequest.props.opCode, radix: 16))")
 }
 
-/// Drives the pump over BLE. Runs on the main RunLoop.
-final class Harness: NSObject, PumpBLEClientDelegate {
+/// Read-only pump monitor: connect, pair over JPAKE, and poll status. Never writes a control
+/// or insulin-affecting message (enforced by `client.readOnly`).
+@MainActor
+final class Monitor: NSObject, PumpBLEClientDelegate {
     let client = PumpBLEClient()
-    let mode: String
-    let bolusMilliunits: UInt32?
-    let pairingCode = ProcessInfo.processInfo.environment["PUMP_PAIRING_CODE"]
-    let pumpTimeSinceReset = UInt32(ProcessInfo.processInfo.environment["PUMP_TIME_SINCE_RESET"] ?? "0") ?? 0
+    let pairingCode = ProcessInfo.processInfo.environment["PUMP_PAIRING_CODE"] ?? ""
+    var coordinator: PairingCoordinator?
+    let scanOnly: Bool
+    var pollTimer: Timer?
 
-    init(mode: String, bolusMilliunits: UInt32? = nil) {
-        self.mode = mode
-        self.bolusMilliunits = bolusMilliunits
+    init(scanOnly: Bool) {
+        self.scanOnly = scanOnly
         super.init()
+        client.readOnly = true            // hard safety: no state-changing writes
         client.delegate = self
     }
 
-    var authKey: [UInt8] { pairingCode.map { Array($0.utf8) } ?? [] }
-
-    func pumpClient(_ client: PumpBLEClient, didChange state: PumpBLEClient.State) {
+    func pumpClient(_ c: PumpBLEClient, didChange state: PumpBLEClient.State) {
         print("[state] \(state)")
-        if state == .idle { client.startScan() }
+        if state == .idle { c.startScan() }
     }
 
-    func pumpClient(_ client: PumpBLEClient, didDiscover peripheral: CBPeripheral, rssi: Int) {
+    func pumpClient(_ c: PumpBLEClient, didDiscover peripheral: CBPeripheral, rssi: Int) {
         print("[discover] \(peripheral.name ?? "unknown") rssi=\(rssi)")
-        if mode != "scan" { client.connect(peripheral) }
+        if !scanOnly { c.connect(peripheral) }
     }
 
-    func pumpClientDidBecomeReady(_ client: PumpBLEClient) {
+    func pumpClientDidBecomeReady(_ c: PumpBLEClient) {
         print("[ready] connected + characteristics discovered")
+        guard !pairingCode.isEmpty else {
+            print("[warn] PUMP_PAIRING_CODE not set — cannot pair; reads will be rejected by the pump")
+            return
+        }
         do {
-            try client.send(ApiVersionRequest())
-            try client.send(InsulinStatusRequest())
-            try client.send(ControlIQIOBRequest())
-            if mode == "bolus", let mu = bolusMilliunits {
-                print("[bolus] requesting permission for \(Double(mu)/1000.0) u (saline!)")
-                try client.send(BolusPermissionRequest(), authenticationKey: authKey,
-                                pumpTimeSinceReset: pumpTimeSinceReset)
-                // NOTE: initiate must use the bolusId from BolusPermissionResponse (needs
-                // response parsing) — wired once response parsing + a bench pump are available.
-                print("[bolus] TODO: parse BolusPermissionResponse.bolusId, then InitiateBolusRequest")
+            let coord = try PairingCoordinator(pairingCode: pairingCode)
+            coord.onSendRequest = { msg in try? c.send(msg) }   // AUTHORIZATION msgs pass the read-only gate
+            coord.onError = { print("[pairing] error: \($0)") }
+            coord.onPaired = { [weak self] authKey, _ in
+                print("[paired] JPAKE complete; signing key derived (\(authKey.count) bytes). Read-only — not used for writes.")
+                self?.startPolling()
             }
+            coordinator = coord
+            print("[pairing] starting JPAKE (6-digit)…")
+            coord.start()
         } catch {
-            print("[error] send failed: \(error)")
+            print("[pairing] failed to start: \(error)")
         }
     }
 
-    func pumpClient(_ client: PumpBLEClient, didReceiveFrame frame: [UInt8], on characteristic: Characteristic) {
-        let opcode = frame.count >= 3 ? frame[2] : 0
-        print("[frame] \(characteristic.name) opcode=\(opcode) hex=\(Hex.encode(frame))")
+    func poll() {
+        try? client.send(ControlIQIOBRequest())
+        try? client.send(InsulinStatusRequest())
+        try? client.send(CurrentBatteryV2Request())
     }
 
-    func pumpClient(_ client: PumpBLEClient, didError error: Error) {
-        print("[error] \(error)")
+    func startPolling() {
+        poll()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { _ in
+            MainActor.assumeIsolated { self.poll() }
+        }
     }
+
+    func pumpClient(_ c: PumpBLEClient, didReceiveFrame frame: [UInt8], on ch: Characteristic) {
+        if ch == .authorization {
+            coordinator?.handle(frame: frame)
+        } else if let parsed = try? ResponseParser.parse(frame: frame) {
+            switch parsed.message {
+            case let m as ControlIQIOBResponse: print("[status] IOB = \(m.iobUnits) u")
+            case let m as InsulinStatusResponse: print("[status] insulin remaining = \(m.currentInsulinAmount) u")
+            case let m as CurrentBatteryV2Response: print("[status] battery = \(m.batteryPercent)%")
+            default: print("[status] opcode \(parsed.opCode)")
+            }
+        } else {
+            print("[frame] \(ch.name) hex=\(Hex.encode(frame))")
+        }
+    }
+
+    func pumpClient(_ c: PumpBLEClient, didError error: Error) { print("[error] \(error)") }
 }
 
 switch args.first {
 case nil, "":
     serializationSelfCheck()
-case "scan", "status":
-    let h = Harness(mode: args[0])
-    _ = h
-    print("Starting \(args[0]) — requires a paired test pump and Bluetooth permission. Ctrl-C to stop.")
+case "scan":
+    let m = Monitor(scanOnly: true); _ = m
+    print("Scanning for pumps — Ctrl-C to stop.")
     RunLoop.main.run()
-case "bolus":
-    guard args.count >= 2, let mu = UInt32(args[1]) else {
-        print("usage: bolus <milliunits>   (e.g. 1000 = 1.0 u)"); exit(2)
-    }
-    let h = Harness(mode: "bolus", bolusMilliunits: mu)
-    _ = h
-    print("Starting SALINE bolus of \(Double(mu)/1000.0) u — bench pump only. Ctrl-C to stop.")
+case "monitor":
+    let m = Monitor(scanOnly: false); _ = m
+    print("READ-ONLY monitor — connect, JPAKE pair, poll status. No writes that change pump state. Ctrl-C to stop.")
     RunLoop.main.run()
 default:
     print("unknown command: \(args[0])")
-    print("commands: (none)=self-check, scan, status, bolus <milliunits>")
+    print("commands: (none)=self-check, scan, monitor")
     exit(2)
 }
