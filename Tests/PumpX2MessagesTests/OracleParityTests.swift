@@ -51,6 +51,7 @@ struct OracleParityTests {
         ("AlarmStatusRequest", AlarmStatusRequest()),
         ("MalfunctionStatusRequest", MalfunctionStatusRequest()),
         ("HistoryLogStatusRequest", HistoryLogStatusRequest()),
+        ("CGMAlertStatusRequest", CGMAlertStatusRequest()),
     ]
 
     @Test(arguments: statusReads)

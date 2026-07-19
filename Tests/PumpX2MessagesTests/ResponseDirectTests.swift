@@ -65,6 +65,35 @@ import Testing
         #expect(readings.first?.sequenceNum == 42)
     }
 
+    /// Alert/alarm bitmaps decode to the right notifications. Bit 0 (Low insulin) + bit 11
+    /// (Incomplete bolus) → uint64 with those bits set.
+    @Test func alertBitmapDecodes() {
+        let bits: UInt64 = (1 << 0) | (1 << 11)
+        let m = AlertStatusResponse(cargo: Bytes.toUint64(bits))
+        let ns = m.notifications
+        #expect(ns.count == 2)
+        #expect(ns.contains { $0.id == 0 && $0.kind == .alert && $0.title == "Low insulin" })
+        #expect(ns.contains { $0.id == 11 && $0.title == "Incomplete bolus" })
+    }
+
+    @Test func alarmBitmapDecodesOcclusion() {
+        let m = AlarmStatusResponse(cargo: Bytes.toUint64(1 << 2))
+        #expect(m.notifications.count == 1)
+        #expect(m.notifications.first?.id == 2)
+        #expect(m.notifications.first?.kind == .alarm)
+        #expect(m.notifications.first?.title == "Occlusion")
+    }
+
+    /// DismissNotificationRequest cargo: notificationId (uint32) + typeId + executeExtraAction.
+    @Test func dismissNotificationCargo() {
+        let m = DismissNotificationRequest(kind: .alert, notificationId: 21)
+        #expect(m.cargo == [21, 0, 0, 0, 1, 0])   // id=21, type=alert(1), flag=0
+        #expect(DismissNotificationRequest.props.signed)
+        #expect(DismissNotificationRequest.props.characteristic == .control)
+        let alarm = DismissNotificationRequest(kind: .alarm, notificationId: 2, executeExtraAction: true)
+        #expect(alarm.cargo == [2, 0, 0, 0, 2, 1])
+    }
+
     /// EGV V2 parses a 9-byte cargo (Control-IQ+ firmware appends a trailing byte); a VALID
     /// status (1) with an in-range reading is displayable.
     @Test func egvV2NineByteCargo() {
