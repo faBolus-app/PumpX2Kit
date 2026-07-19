@@ -66,6 +66,79 @@ public struct CurrentBatteryV2Response: ResponseMessage {
     public var batteryPercent: Int { currentBatteryIbc }
 }
 
+/// Current CGM reading + trend (GUI data, V2). `response/currentStatus/CurrentEgvGuiDataV2Response`
+/// (opcode 193, 8 bytes). `cgmReading` is mg/dL; `trendRate` is a signed rate (sign → arrow).
+public struct CurrentEgvGuiDataV2Response: ResponseMessage {
+    public static let props = MessageProps(opCode: 193, size: 8, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var bgReadingTimestampSeconds: UInt32 = 0
+    public private(set) var cgmReading: Int = 0        // mg/dL
+    public private(set) var egvStatusId: Int = 0
+    public private(set) var trendRate: Int = 0         // signed (Int8)
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        bgReadingTimestampSeconds = Bytes.readUint32(raw, 0)
+        cgmReading = Bytes.readShort(raw, 4)
+        egvStatusId = Int(raw[6])
+        trendRate = Int(Int8(bitPattern: raw[7]))
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = CurrentEgvGuiDataV2Response(cargo: raw) }
+    /// A coarse Loop-style trend arrow from the sign/magnitude of `trendRate`.
+    public var trendArrow: String {
+        switch trendRate {
+        case ..<(-20): return "⇊"
+        case (-20)..<(-5): return "↓"
+        case (-5)..<6: return "→"
+        case 6..<21: return "↑"
+        default: return "⇈"
+        }
+    }
+    /// True when the CGM reading is valid/displayable (egvStatusId 0 = normal in observed data).
+    public var hasValidReading: Bool { cgmReading > 0 && cgmReading < 600 }
+}
+
+/// Basal rate. `response/currentStatus/CurrentBasalStatusResponse` (opcode 41, 9 bytes).
+/// Rates are in milliunits/hour.
+public struct CurrentBasalStatusResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 41, size: 9, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var profileBasalRate: UInt32 = 0
+    public private(set) var currentBasalRate: UInt32 = 0
+    public private(set) var basalModifiedBitmask: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        profileBasalRate = Bytes.readUint32(raw, 0)
+        currentBasalRate = Bytes.readUint32(raw, 4)
+        basalModifiedBitmask = Int(raw[8])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = CurrentBasalStatusResponse(cargo: raw) }
+    public var currentBasalUnitsPerHour: Double { Double(currentBasalRate) / 1000.0 }
+}
+
+/// Last completed bolus. `response/currentStatus/LastBolusStatusV2Response` (opcode 165, 24 bytes).
+public struct LastBolusStatusV2Response: ResponseMessage {
+    public static let props = MessageProps(opCode: 165, size: 24, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public private(set) var bolusId: Int = 0
+    public private(set) var timestamp: UInt32 = 0
+    public private(set) var deliveredVolume: UInt32 = 0     // milliunits
+    public private(set) var requestedVolume: UInt32 = 0     // milliunits
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        status = Int(raw[0])
+        bolusId = Bytes.readShort(raw, 1)
+        timestamp = Bytes.readUint32(raw, 5)
+        deliveredVolume = Bytes.readUint32(raw, 9)
+        requestedVolume = Bytes.readUint32(raw, 20)
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = LastBolusStatusV2Response(cargo: raw) }
+    public var deliveredUnits: Double { Double(deliveredVolume) / 1000.0 }
+}
+
 /// Bolus permission grant. `response/control/BolusPermissionResponse` (opcode 163, 6 bytes).
 /// `status == 0` = granted; `bolusId` is used for InitiateBolus/Cancel.
 public struct BolusPermissionResponse: ResponseMessage {

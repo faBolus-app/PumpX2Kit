@@ -84,6 +84,9 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
         try? client.send(ControlIQIOBRequest())
         try? client.send(InsulinStatusRequest())
         try? client.send(CurrentBatteryV2Request())
+        try? client.send(CurrentEgvGuiDataV2Request())
+        try? client.send(CurrentBasalStatusRequest())
+        try? client.send(LastBolusStatusV2Request())
     }
 
     func startPolling() {
@@ -103,6 +106,12 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
                 print("[status] IOB = \(m.iobUnits) u")
             case let m as InsulinStatusResponse: print("[status] insulin remaining = \(m.currentInsulinAmount) u")
             case let m as CurrentBatteryV2Response: print("[status] battery = \(m.batteryPercent)%")
+            case let m as CurrentEgvGuiDataV2Response:
+                print("[status] glucose = \(m.hasValidReading ? "\(m.cgmReading)" : "--") mg/dL \(m.trendArrow) (trendRate=\(m.trendRate))")
+            case let m as CurrentBasalStatusResponse:
+                print("[status] basal = \(m.currentBasalUnitsPerHour) u/hr")
+            case let m as LastBolusStatusV2Response:
+                print("[status] last bolus = \(m.deliveredUnits) u (id \(m.bolusId))")
             default: print("[status] opcode \(parsed.opCode)")
             }
         } else {

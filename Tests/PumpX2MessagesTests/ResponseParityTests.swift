@@ -57,6 +57,37 @@ import Testing
         #expect(msg.bolusId == 10650)
     }
 
+    @Test func egvGuiDataV2ResponseParses() throws {
+        // [bgReadingTimestampSeconds, cgmReading, egvStatusId, trendRate]
+        let packets = try OracleRunner.encode(
+            txId: 7, messageName: "CurrentEgvGuiDataV2Response", json: "[461589432, 142, 0, 12]").packets
+        let msg = try #require(try ResponseParser.parse(frame: frame(packets)).message as? CurrentEgvGuiDataV2Response)
+        #expect(msg.cgmReading == 142)
+        #expect(msg.trendRate == 12)
+        #expect(msg.hasValidReading)
+    }
+
+    @Test func basalStatusResponseParses() throws {
+        // [profileBasalRate, currentBasalRate, basalModifiedBitmask] — milliunits/hr
+        let packets = try OracleRunner.encode(
+            txId: 8, messageName: "CurrentBasalStatusResponse", json: "[850, 850, 0]").packets
+        let msg = try #require(try ResponseParser.parse(frame: frame(packets)).message as? CurrentBasalStatusResponse)
+        #expect(msg.currentBasalRate == 850)
+        #expect(msg.currentBasalUnitsPerHour == 0.85)
+    }
+
+    @Test func lastBolusStatusV2ResponseParses() throws {
+        // [status, bolusId, timestamp, deliveredVolume, bolusStatusId, bolusSourceId,
+        //  bolusTypeBitmask, extendedBolusDuration, requestedVolume]
+        let packets = try OracleRunner.encode(
+            txId: 9, messageName: "LastBolusStatusV2Response",
+            json: "[1, 10650, 461510714, 1000, 3, 8, 8, 0, 1000]").packets
+        let msg = try #require(try ResponseParser.parse(frame: frame(packets)).message as? LastBolusStatusV2Response)
+        #expect(msg.bolusId == 10650)
+        #expect(msg.deliveredVolume == 1000)
+        #expect(msg.deliveredUnits == 1.0)
+    }
+
     /// A corrupted CRC must be rejected.
     @Test func crcMismatchRejected() throws {
         var packets = try OracleRunner.encode(

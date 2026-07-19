@@ -89,6 +89,11 @@ public struct LastBGRequest: EmptyCurrentStatusRequest {
     public var cargo: [UInt8] = []
     public init(emptyCargo: Void = ()) { self.cargo = [] }
 }
+public struct CurrentEgvGuiDataV2Request: EmptyCurrentStatusRequest {
+    public static let props = statusProps(0xC0) // -64; response 0xC1 (193). V2 (newer firmware)
+    public var cargo: [UInt8] = []
+    public init(emptyCargo: Void = ()) { self.cargo = [] }
+}
 public struct PumpGlobalsRequest: EmptyCurrentStatusRequest {
     public static let props = statusProps(86)
     public var cargo: [UInt8] = []

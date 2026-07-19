@@ -24,6 +24,9 @@ public enum ResponseParser {
         ControlIQIOBResponse.props.opCode:    { ControlIQIOBResponse(cargo: $0) },
         InsulinStatusResponse.props.opCode:   { InsulinStatusResponse(cargo: $0) },
         CurrentBatteryV2Response.props.opCode: { CurrentBatteryV2Response(cargo: $0) },
+        CurrentEgvGuiDataV2Response.props.opCode: { CurrentEgvGuiDataV2Response(cargo: $0) },
+        CurrentBasalStatusResponse.props.opCode: { CurrentBasalStatusResponse(cargo: $0) },
+        LastBolusStatusV2Response.props.opCode: { LastBolusStatusV2Response(cargo: $0) },
         BolusPermissionResponse.props.opCode: { BolusPermissionResponse(cargo: $0) },
         InitiateBolusResponse.props.opCode:   { InitiateBolusResponse(cargo: $0) },
     ]
@@ -32,6 +35,9 @@ public enum ResponseParser {
         ControlIQIOBResponse.props.opCode: ControlIQIOBResponse.props.size,
         InsulinStatusResponse.props.opCode: InsulinStatusResponse.props.size,
         CurrentBatteryV2Response.props.opCode: CurrentBatteryV2Response.props.size,
+        CurrentEgvGuiDataV2Response.props.opCode: CurrentEgvGuiDataV2Response.props.size,
+        CurrentBasalStatusResponse.props.opCode: CurrentBasalStatusResponse.props.size,
+        LastBolusStatusV2Response.props.opCode: LastBolusStatusV2Response.props.size,
         BolusPermissionResponse.props.opCode: BolusPermissionResponse.props.size,
         InitiateBolusResponse.props.opCode: InitiateBolusResponse.props.size,
     ]
