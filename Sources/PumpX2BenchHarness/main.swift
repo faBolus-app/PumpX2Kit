@@ -38,20 +38,27 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
     let client = PumpBLEClient()
     let pairingCode = ProcessInfo.processInfo.environment["PUMP_PAIRING_CODE"] ?? ""
     var coordinator: PairingCoordinator?
-    enum Mode { case scan, monitor, permissionTest }
+    enum Mode: Equatable { case scan, monitor, permissionTest, deliverBolus(milliunits: UInt32) }
     let mode: Mode
     var pollTimer: Timer?
     var authKey: [UInt8] = []
     var signingTimestamp: UInt32 = 0
     var permissionSent = false
+    var currentBolusId: Int = 0
+    static let bolusTypeFood2 = 8   // manual units-only bolus (controlX2 convention)
 
     init(mode: Mode) {
         self.mode = mode
         super.init()
-        // permission-test allows signed NON-dispensing writes; delivery stays hard-blocked.
-        client.writePolicy = (mode == .permissionTest) ? .allowNonDelivery : .readOnly
+        switch mode {
+        case .permissionTest: client.writePolicy = .allowNonDelivery
+        case .deliverBolus:    client.writePolicy = .allowDelivery   // BENCH SALINE ONLY
+        default:               client.writePolicy = .readOnly
+        }
         client.delegate = self
     }
+
+    var isBolusMode: Bool { if case .deliverBolus = mode { return true } else { return false } }
 
     func pumpClient(_ c: PumpBLEClient, didChange state: PumpBLEClient.State) {
         print("[state] \(state)")
@@ -79,9 +86,9 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
                 print("[paired] JPAKE complete; signing key derived (\(authKey.count) bytes).")
                 switch self.mode {
                 case .monitor: self.startPolling()
-                case .permissionTest:
-                    print("[permission-test] reading pump time for signing…")
-                    try? c.send(TimeSinceResetRequest())   // read (allowed); triggers signed permission
+                case .permissionTest, .deliverBolus:
+                    print("[write] reading pump time for signing…")
+                    try? c.send(TimeSinceResetRequest())   // read (allowed); triggers the signed flow
                 case .scan: break
                 }
             }
@@ -108,6 +115,36 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
         print("[permission-test] releasing bolus permission id \(bolusId)…")
         try? client.send(BolusPermissionReleaseRequest(bolusID: bolusId),
                          authenticationKey: authKey, pumpTimeSinceReset: signingTimestamp)
+    }
+
+    /// Phase B: initiate a SALINE bolus of `milliunits` for the granted `bolusId`. Signed +
+    /// delivery-enabled. FOOD2 (manual units-only) type.
+    func initiateBolus(milliunits: UInt32, bolusId: Int) {
+        currentBolusId = bolusId
+        print("[bolus] initiating \(Double(milliunits)/1000.0) u SALINE (bolusId \(bolusId))…")
+        do {
+            try client.send(
+                InitiateBolusRequest(totalVolume: milliunits, bolusID: bolusId,
+                                     bolusTypeBitmask: Self.bolusTypeFood2),
+                authenticationKey: authKey, pumpTimeSinceReset: signingTimestamp,
+                allowInsulinDelivery: true)
+        } catch { print("[bolus] initiate failed: \(error)") }
+    }
+
+    /// Cancel an in-progress bolus (SIGINT / Ctrl-C).
+    func cancelBolus() {
+        guard currentBolusId != 0 else { return }
+        print("[bolus] CANCELLING bolus id \(currentBolusId)…")
+        try? client.send(CancelBolusRequest(bolusId: currentBolusId),
+                         authenticationKey: authKey, pumpTimeSinceReset: signingTimestamp)
+    }
+
+    /// After initiate, poll last-bolus status to watch delivered volume grow.
+    func startBolusStatusPolling() {
+        pollTimer?.invalidate()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
+            MainActor.assumeIsolated { _ = try? self.client.send(LastBolusStatusV2Request()) }
+        }
     }
 
     func poll() {
@@ -148,18 +185,28 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
                     + "isf/correctionFactor=\(m.isf) mg/dL/u targetBG=\(m.targetBg) mg/dL "
                     + "carbEntryEnabled=\(m.carbEntryEnabled) maxBolus=\(Double(m.maxBolusAmount)/1000.0)u")
             case let m as TimeSinceResetResponse:
-                if mode == .permissionTest && !permissionSent {
+                if (mode == .permissionTest || isBolusMode) && !permissionSent {
                     signingTimestamp = m.signingTimestamp
                     print("[time] currentTime=\(m.currentTime) pumpTimeSinceReset=\(m.pumpTimeSinceReset) → signing with \(signingTimestamp)")
                     sendSignedPermission()
                 }
             case let m as BolusPermissionResponse:
                 print("[permission] status=\(m.status) granted=\(m.granted) bolusId=\(m.bolusId) nackReason=\(m.nackReasonId)")
-                if m.granted {
+                guard m.granted else { print("[permission] ❌ not granted — check signature/timestamp or pump state"); break }
+                if case let .deliverBolus(mu) = mode {
+                    print("[permission] ✅ granted — proceeding to SALINE delivery")
+                    initiateBolus(milliunits: mu, bolusId: m.bolusId)
+                } else {
                     print("[permission] ✅ pump ACCEPTED the signature and granted permission (no insulin delivered)")
                     releasePermission(bolusId: m.bolusId)
+                }
+            case let m as InitiateBolusResponse:
+                print("[bolus] initiate response — status=\(m.status) accepted=\(m.accepted) bolusId=\(m.bolusId) statusType=\(m.statusTypeId)")
+                if m.accepted {
+                    print("[bolus] ✅ pump accepted the bolus — delivering SALINE. Weigh the container; Ctrl-C cancels.")
+                    startBolusStatusPolling()
                 } else {
-                    print("[permission] ❌ not granted — check signature/timestamp or pump state")
+                    print("[bolus] ❌ initiate not accepted")
                 }
             default: print("[status] opcode \(parsed.opCode)")
             }
@@ -189,8 +236,33 @@ case "permission-test":
     print("SIGNATURE TEST — pair, then send a SIGNED bolus-permission (NO insulin delivered) to")
     print("prove the pump accepts our HMAC. Delivery is hard-blocked. Ctrl-C to stop.")
     RunLoop.main.run()
+case "bolus":
+    // PHASE B — ACTUALLY DELIVERS. Bench saline only. Guarded so it can't run by accident.
+    guard args.count >= 2, let mu = UInt32(args[1]) else {
+        print("usage: bolus <milliunits>   e.g. 'bolus 100' = 0.10 u"); exit(2)
+    }
+    guard ProcessInfo.processInfo.environment["PUMPX2_DELIVER_SALINE"] == "1" else {
+        print("REFUSED. This mode delivers a real bolus. Set PUMPX2_DELIVER_SALINE=1 to confirm")
+        print("the pump has a SALINE cartridge dispensing into a container on a scale — never on a body.")
+        exit(2)
+    }
+    guard mu >= 50 && mu <= 2000 else {
+        print("REFUSED. Bench limit is 50–2000 milliunits (0.05–2.0 u). Got \(mu)."); exit(2)
+    }
+    let monitor = Monitor(mode: .deliverBolus(milliunits: mu)); _ = monitor
+    // Ctrl-C cancels the in-progress bolus, then exits shortly after.
+    signal(SIGINT, SIG_IGN)
+    let sigint = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
+    sigint.setEventHandler {
+        MainActor.assumeIsolated { monitor.cancelBolus() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { exit(0) }
+    }
+    sigint.resume()
+    print("⚠️  SALINE BOLUS \(Double(mu)/1000.0) u — bench only. Pump must dispense saline into a")
+    print("container on a scale. Weigh before/after. Ctrl-C cancels mid-delivery.")
+    RunLoop.main.run()
 default:
     print("unknown command: \(args[0])")
-    print("commands: (none)=self-check, scan, monitor, permission-test")
+    print("commands: (none)=self-check, scan, monitor, permission-test, bolus <milliunits>")
     exit(2)
 }
