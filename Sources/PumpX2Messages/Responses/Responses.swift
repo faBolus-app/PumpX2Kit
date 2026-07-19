@@ -31,6 +31,29 @@ public struct ControlIQIOBResponse: ResponseMessage {
     public var iobUnits: Double { Double(swan6hrIOB) / 1000.0 }
 }
 
+/// In-progress bolus status. `response/currentStatus/CurrentBolusStatusResponse` (opcode 45,
+/// 15 bytes). `statusId`: 0 = already delivered / invalid (none active), 1 = delivering,
+/// 2 = requesting. Used to detect when a bolus finishes so the UI can keep a live cancel window.
+public struct CurrentBolusStatusResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 45, size: 15, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var statusId: Int = 0
+    public private(set) var bolusId: Int = 0
+    public private(set) var requestedVolume: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        if raw.count >= 15 {
+            statusId = Int(raw[0])
+            bolusId = Bytes.readShort(raw, 1)
+            requestedVolume = Bytes.readUint32(raw, 9)
+        }
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = CurrentBolusStatusResponse(cargo: raw) }
+    /// True while the pump is still requesting or delivering this bolus.
+    public var isActive: Bool { statusId == 1 || statusId == 2 }
+}
+
 /// Insulin remaining. `response/currentStatus/InsulinStatusResponse` (opcode 37, 4 bytes).
 public struct InsulinStatusResponse: ResponseMessage {
     public static let props = MessageProps(opCode: 37, size: 4, type: .response, characteristic: .currentStatus)

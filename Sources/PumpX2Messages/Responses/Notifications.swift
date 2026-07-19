@@ -128,15 +128,32 @@ public struct CGMAlertStatusResponse: ResponseMessage {
     public var notifications: [PumpNotification] {
         NotificationBitmap.decode(bitmap, kind: .cgmAlert, names: Self.names)
     }
+    // Real CGM alert bits (from pumpX2 CGMAlertStatusResponse.CGMAlert) — do not reorder.
     static let names: [Int: (String, String?)] = [
-        0: ("Low glucose", "Glucose is below the low alert threshold."),
-        1: ("High glucose", "Glucose is above the high alert threshold."),
-        2: ("Urgent low", "Glucose is urgently low."),
-        3: ("Urgent low predicted", "An urgent low is predicted soon."),
-        4: ("Falling fast", "Glucose is falling rapidly."),
-        5: ("Rising fast", "Glucose is rising rapidly."),
-        6: ("Out of range", "The CGM is out of range."),
-        7: ("Signal loss", "The CGM signal was lost."),
+        1: ("Fixed low", "Glucose is at or below the fixed low threshold (urgent)."),
+        2: ("High glucose", "Glucose is above the high alert threshold."),
+        3: ("Low glucose", "Glucose is below the low alert threshold."),
+        4: ("Calibration request", "The CGM is requesting a calibration."),
+        5: ("Rising", "Glucose is rising."),
+        6: ("Rising fast", "Glucose is rising rapidly."),
+        7: ("Falling", "Glucose is falling."),
+        8: ("Falling fast", "Glucose is falling rapidly."),
+        9: ("Low calibration error", "Calibration error (low)."),
+        10: ("High calibration error", "Calibration error (high)."),
+        11: ("Sensor failed", "The CGM sensor failed."),
+        12: ("Sensor expiring", "The CGM sensor is expiring soon."),
+        13: ("Sensor expired", "The CGM sensor has expired."),
+        14: ("Out of range", "The CGM is out of range."),
+        16: ("Start calibration", "First startup calibration required."),
+        17: ("Start calibration", "Second startup calibration required."),
+        18: ("Calibration required", "A calibration is required."),
+        19: ("Low transmitter", "The CGM transmitter battery is low."),
+        20: ("Transmitter alert", "There is an alert from the CGM transmitter."),
+        22: ("Sensor expiring", "The CGM sensor is expiring soon."),
+        25: ("Sensor reuse", "Sensor reuse detected."),
+        26: ("Temperature", "CGM temperature out of range."),
+        27: ("Failed connection", "The CGM connection failed."),
+        39: ("Transmitter expired", "The CGM transmitter has expired."),
     ]
 }
 
@@ -206,4 +223,14 @@ public struct DismissNotificationRequest: Message {
         notificationId = Int(Bytes.readUint32(c, 0))
         kind = NotificationKind(rawValue: Int(c[4])) ?? .alert
     }
+}
+
+/// Ack for a DismissNotificationRequest (opcode 185, 1 byte). `status` 0 usually = success.
+public struct DismissNotificationResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 185, size: 1, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = -1
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = DismissNotificationResponse(cargo: raw) }
 }
