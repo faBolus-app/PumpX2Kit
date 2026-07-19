@@ -47,6 +47,18 @@ public struct CgmHistoryReading: Sendable, Equatable {
     public let glucoseMgdl: Int
 }
 
+/// A completed bolus recovered from a history-log record (`LID_BOLUS_COMPLETED`, typeId 20). Both
+/// `deliveredUnits` and `iobUnits` are real insulin units (IEEE floats in the record).
+public struct BolusHistoryRecord: Sendable, Equatable {
+    public let pumpTimeSec: UInt32
+    public let sequenceNum: UInt32
+    public let deliveredUnits: Double
+    /// Insulin on board at the time of this bolus completion — lets us seed the IOB chart from
+    /// history (the pump keeps no separate IOB-over-time log).
+    public let iobUnits: Double
+    public let completionStatusId: Int
+}
+
 /// Shared history-log helpers/constants.
 public enum HistoryLog {
     /// Unix epoch seconds for Jan 1 2008 — the base for pump-clock timestamps. Mirrors
@@ -56,6 +68,9 @@ public enum HistoryLog {
     /// CGM record type ids that carry a displayable glucose value at the same offsets:
     /// Dexcom G6 (`LID_CGM_DATA_GXB` = 256) and G7 (399).
     static let cgmTypeIds: Set<Int> = [256, 399]
+
+    /// `LID_BOLUS_COMPLETED` — a finished bolus (delivered units + IOB at the time).
+    static let bolusCompletedTypeId = 20
 
     /// Each history-log record is a fixed 26 bytes.
     static let recordSize = 26
@@ -73,6 +88,22 @@ public enum HistoryLog {
         return CgmHistoryReading(pumpTimeSec: Bytes.readUint32(raw, 2),
                                  sequenceNum: Bytes.readUint32(raw, 6),
                                  glucoseMgdl: mgdl)
+    }
+
+    /// Parses one 26-byte record, returning a completed bolus if it's a `LID_BOLUS_COMPLETED`
+    /// record. Layout (`BolusCompletedHistoryLog`): completionStatus = short@10, bolusId = short@12,
+    /// iob = float@14, insulinDelivered = float@18, insulinRequested = float@22.
+    static func parseBolusRecord(_ raw: [UInt8]) -> BolusHistoryRecord? {
+        guard raw.count >= recordSize else { return nil }
+        let typeId = Bytes.readShort(raw, 0) & 0x0FFF
+        guard typeId == bolusCompletedTypeId else { return nil }
+        let delivered = Double(Bytes.readFloat(raw, 18))
+        guard delivered > 0, delivered < 100 else { return nil }   // guard sentinel/garbage
+        return BolusHistoryRecord(pumpTimeSec: Bytes.readUint32(raw, 2),
+                                  sequenceNum: Bytes.readUint32(raw, 6),
+                                  deliveredUnits: delivered,
+                                  iobUnits: Double(Bytes.readFloat(raw, 14)),
+                                  completionStatusId: Bytes.readShort(raw, 10))
     }
 }
 
@@ -103,5 +134,10 @@ public struct HistoryLogStreamResponse: ResponseMessage {
     /// The CGM readings contained in this frame, in wire order.
     public var cgmReadings: [CgmHistoryReading] {
         records.compactMap { HistoryLog.parseCgmRecord($0) }
+    }
+
+    /// The completed boluses contained in this frame, in wire order.
+    public var bolusRecords: [BolusHistoryRecord] {
+        records.compactMap { HistoryLog.parseBolusRecord($0) }
     }
 }

@@ -65,6 +65,30 @@ import Testing
         #expect(readings.first?.sequenceNum == 42)
     }
 
+    /// HistoryLogStreamResponse: pull completed boluses out of a stream frame. Uses the upstream
+    /// `BolusCompletedHistoryLogTest` wire vector (pumpTimeSec 446158750, delivered 1.7869551,
+    /// iob 3.652852) to verify the record offsets byte-for-byte.
+    @Test func historyLogStreamBolusParsing() {
+        func hex(_ s: String) -> [UInt8] {
+            var out: [UInt8] = []; var i = s.startIndex
+            while i < s.endIndex { let j = s.index(i, offsetBy: 2)
+                out.append(UInt8(s[i..<j], radix: 16)!); i = j }
+            return out
+        }
+        let rec = hex("14009ed7971a70d802000300210454c86940f2bae43ff2bae43f")
+        #expect(rec.count == 26)
+        let cargo: [UInt8] = [1, 3] + rec   // numberOfHistoryLogs=1, streamId=3
+        let m = HistoryLogStreamResponse(cargo: cargo)
+        let boluses = m.bolusRecords
+        #expect(boluses.count == 1)
+        #expect(boluses.first?.pumpTimeSec == 446_158_750)
+        #expect(boluses.first?.sequenceNum == 186_480)
+        #expect(boluses.first?.completionStatusId == 3)
+        #expect(abs((boluses.first?.deliveredUnits ?? 0) - 1.7869551) < 0.0001)
+        #expect(abs((boluses.first?.iobUnits ?? 0) - 3.652852) < 0.0001)
+        #expect(m.cgmReadings.isEmpty)   // a bolus record is not a CGM reading
+    }
+
     /// Alert/alarm bitmaps decode to the right notifications. Bit 0 (Low insulin) + bit 11
     /// (Incomplete bolus) → uint64 with those bits set.
     @Test func alertBitmapDecodes() {
