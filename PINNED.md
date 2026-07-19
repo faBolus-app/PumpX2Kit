@@ -39,7 +39,18 @@ secp256r1/SHA-256). The legacy 16-char path is retained only for older pumps.
   response parsing — end to end on the real pump.
   - **Finding:** the pump's displayed IOB matches **`swan6hrIOB`**, not `mudaliarIOB` — so
     `ControlIQIOBResponse.iobUnits` now uses `swan6hrIOB` (4.32 u observed = pump display).
-- **Pending:** gravimetric saline bolus + cancel (writes enabled, out of read-only mode).
+- **2026-07-18 — additional reads confirmed on hardware:** glucose (CGM EGV V2), basal, last
+  bolus, and the bolus-calculator snapshot (carb ratio, ISF, target BG) all matched the pump
+  screens. Signing timestamp = `TimeSinceResetResponse.currentTime`.
+- **2026-07-18 — SIGNED WRITE validated on hardware (permission test):** a signed
+  BolusPermissionRequest was ACCEPTED (granted=true) and released — no insulin delivered.
+- **2026-07-18 — 🎯 MILESTONE 1 DoD MET: saline bolus delivered.** `bolus 100` delivered
+  **0.10 u** of saline: permission → signed InitiateBolus (FOOD2) accepted → LastBolusStatus
+  reported 0.10 u (id 1774); the **pump screen agreed**. Signed CancelBolus round-trips.
+  Full delivery path (BLE + JPAKE + signed permission + signed initiate + status + cancel) is
+  proven on the real pump, with every outgoing message byte-exact vs the cliparser oracle.
+- **Pending niceties:** gravimetric mass check at a larger, weighable dose; cancel *mid*-
+  delivery (extended/large bolus) for partial-delivery reporting.
 
 ## Toolchain notes
 

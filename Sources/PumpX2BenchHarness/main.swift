@@ -104,7 +104,9 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
     /// pump accepts our HMAC, then release. Delivery is still hard-blocked by writePolicy.
     func sendSignedPermission() {
         permissionSent = true
-        print("[permission-test] sending SIGNED BolusPermissionRequest (no insulin delivered)…")
+        print(isBolusMode
+            ? "[bolus] requesting SIGNED bolus permission…"
+            : "[permission-test] sending SIGNED BolusPermissionRequest (no insulin delivered)…")
         do {
             try client.send(BolusPermissionRequest(), authenticationKey: authKey,
                             pumpTimeSinceReset: signingTimestamp)
