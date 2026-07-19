@@ -26,8 +26,9 @@ public struct ControlIQIOBResponse: ResponseMessage {
         iobType = Int(raw[16])
     }
     public mutating func parse(_ raw: [UInt8]) { self = ControlIQIOBResponse(cargo: raw) }
-    /// IOB in insulin units.
-    public var iobUnits: Double { Double(mudaliarIOB) / 1000.0 }
+    /// IOB in insulin units. Uses `swan6hrIOB` — verified on hardware (t:slim X2, Control-IQ+
+    /// 7.10.2) to match the value the pump displays, unlike `mudaliarIOB`.
+    public var iobUnits: Double { Double(swan6hrIOB) / 1000.0 }
 }
 
 /// Insulin remaining. `response/currentStatus/InsulinStatusResponse` (opcode 37, 4 bytes).

@@ -98,7 +98,9 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
             coordinator?.handle(frame: frame)
         } else if let parsed = try? ResponseParser.parse(frame: frame) {
             switch parsed.message {
-            case let m as ControlIQIOBResponse: print("[status] IOB = \(m.iobUnits) u")
+            case let m as ControlIQIOBResponse:
+                // iobUnits uses swan6hrIOB (matches the pump display, verified on hardware).
+                print("[status] IOB = \(m.iobUnits) u")
             case let m as InsulinStatusResponse: print("[status] insulin remaining = \(m.currentInsulinAmount) u")
             case let m as CurrentBatteryV2Response: print("[status] battery = \(m.batteryPercent)%")
             default: print("[status] opcode \(parsed.opCode)")

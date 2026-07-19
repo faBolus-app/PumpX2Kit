@@ -27,9 +27,19 @@ vendor changes.
 | Pairing type | **6-digit JPAKE** (firmware ≫ v7.7, so legacy 16-char does not apply) |
 
 **Implication:** pairing uses the modern EC-JPAKE handshake (`PumpX2Auth.JpakeAuth`, mbedTLS
-secp256r1/SHA-256). The legacy 16-char path is retained only for older pumps. Remaining
-validation before a bench bolus: JPAKE **oracle-interop** (Swift client ↔ cliparser
-`jpake-server`, derived-secret match) and then real pairing against this pump.
+secp256r1/SHA-256). The legacy 16-char path is retained only for older pumps.
+
+## Bench validation log
+
+- **2026-07-18 — read-only monitor PASSED on hardware.** `swift run PumpX2BenchHarness monitor`
+  against this pump: BLE scan → connect → discover, **6-digit JPAKE pairing succeeded**
+  (signing key derived), and status reads parsed correctly. Insulin-remaining (70 u) and
+  battery (35%) matched the pump exactly; all state-changing writes stayed blocked (read-only
+  interlock). This validates the full stack — CoreBluetooth transport, EC-JPAKE pairing, and
+  response parsing — end to end on the real pump.
+  - **Finding:** the pump's displayed IOB matches **`swan6hrIOB`**, not `mudaliarIOB` — so
+    `ControlIQIOBResponse.iobUnits` now uses `swan6hrIOB` (4.32 u observed = pump display).
+- **Pending:** gravimetric saline bolus + cancel (writes enabled, out of read-only mode).
 
 ## Toolchain notes
 
