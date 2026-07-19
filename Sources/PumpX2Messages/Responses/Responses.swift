@@ -100,6 +100,25 @@ public struct CurrentEgvGuiDataV2Response: ResponseMessage {
     }
 }
 
+/// Pump clock. `response/currentStatus/TimeSinceResetResponse` (opcode 55, 8 bytes).
+/// `currentTime` is what the Android reference embeds into signed-message HMACs, so it's the
+/// value to use as `pumpTimeSinceReset` when signing (verified against upstream TandemBluetoothHandler).
+public struct TimeSinceResetResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 55, size: 8, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var currentTime: UInt32 = 0
+    public private(set) var pumpTimeSinceReset: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        currentTime = Bytes.readUint32(raw, 0)
+        pumpTimeSinceReset = Bytes.readUint32(raw, 4)
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = TimeSinceResetResponse(cargo: raw) }
+    /// The timestamp to embed when signing (matches the Android app, which uses currentTime).
+    public var signingTimestamp: UInt32 { currentTime }
+}
+
 /// Basal rate. `response/currentStatus/CurrentBasalStatusResponse` (opcode 41, 9 bytes).
 /// Rates are in milliunits/hour.
 public struct CurrentBasalStatusResponse: ResponseMessage {

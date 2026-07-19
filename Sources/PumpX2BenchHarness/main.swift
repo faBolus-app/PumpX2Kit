@@ -38,13 +38,18 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
     let client = PumpBLEClient()
     let pairingCode = ProcessInfo.processInfo.environment["PUMP_PAIRING_CODE"] ?? ""
     var coordinator: PairingCoordinator?
-    let scanOnly: Bool
+    enum Mode { case scan, monitor, permissionTest }
+    let mode: Mode
     var pollTimer: Timer?
+    var authKey: [UInt8] = []
+    var signingTimestamp: UInt32 = 0
+    var permissionSent = false
 
-    init(scanOnly: Bool) {
-        self.scanOnly = scanOnly
+    init(mode: Mode) {
+        self.mode = mode
         super.init()
-        client.readOnly = true            // hard safety: no state-changing writes
+        // permission-test allows signed NON-dispensing writes; delivery stays hard-blocked.
+        client.writePolicy = (mode == .permissionTest) ? .allowNonDelivery : .readOnly
         client.delegate = self
     }
 
@@ -55,7 +60,7 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
 
     func pumpClient(_ c: PumpBLEClient, didDiscover peripheral: CBPeripheral, rssi: Int) {
         print("[discover] \(peripheral.name ?? "unknown") rssi=\(rssi)")
-        if !scanOnly { c.connect(peripheral) }
+        if mode != .scan { c.connect(peripheral) }
     }
 
     func pumpClientDidBecomeReady(_ c: PumpBLEClient) {
@@ -66,11 +71,19 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
         }
         do {
             let coord = try PairingCoordinator(pairingCode: pairingCode)
-            coord.onSendRequest = { msg in try? c.send(msg) }   // AUTHORIZATION msgs pass the read-only gate
+            coord.onSendRequest = { msg in try? c.send(msg) }   // AUTHORIZATION msgs pass the interlock
             coord.onError = { print("[pairing] error: \($0)") }
             coord.onPaired = { [weak self] authKey, _ in
-                print("[paired] JPAKE complete; signing key derived (\(authKey.count) bytes). Read-only — not used for writes.")
-                self?.startPolling()
+                guard let self else { return }
+                self.authKey = authKey
+                print("[paired] JPAKE complete; signing key derived (\(authKey.count) bytes).")
+                switch self.mode {
+                case .monitor: self.startPolling()
+                case .permissionTest:
+                    print("[permission-test] reading pump time for signing…")
+                    try? c.send(TimeSinceResetRequest())   // read (allowed); triggers signed permission
+                case .scan: break
+                }
             }
             coordinator = coord
             print("[pairing] starting JPAKE (6-digit)…")
@@ -78,6 +91,23 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
         } catch {
             print("[pairing] failed to start: \(error)")
         }
+    }
+
+    /// Signature test: send a SIGNED BolusPermissionRequest (does NOT dispense) to prove the
+    /// pump accepts our HMAC, then release. Delivery is still hard-blocked by writePolicy.
+    func sendSignedPermission() {
+        permissionSent = true
+        print("[permission-test] sending SIGNED BolusPermissionRequest (no insulin delivered)…")
+        do {
+            try client.send(BolusPermissionRequest(), authenticationKey: authKey,
+                            pumpTimeSinceReset: signingTimestamp)
+        } catch { print("[permission-test] send failed: \(error)") }
+    }
+
+    func releasePermission(bolusId: Int) {
+        print("[permission-test] releasing bolus permission id \(bolusId)…")
+        try? client.send(BolusPermissionReleaseRequest(bolusID: bolusId),
+                         authenticationKey: authKey, pumpTimeSinceReset: signingTimestamp)
     }
 
     func poll() {
@@ -117,6 +147,20 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
                 print("[status] calc — carbRatio raw=\(m.carbRatio) (~\(m.carbRatioGramsPerUnit) g/u) "
                     + "isf/correctionFactor=\(m.isf) mg/dL/u targetBG=\(m.targetBg) mg/dL "
                     + "carbEntryEnabled=\(m.carbEntryEnabled) maxBolus=\(Double(m.maxBolusAmount)/1000.0)u")
+            case let m as TimeSinceResetResponse:
+                if mode == .permissionTest && !permissionSent {
+                    signingTimestamp = m.signingTimestamp
+                    print("[time] currentTime=\(m.currentTime) pumpTimeSinceReset=\(m.pumpTimeSinceReset) → signing with \(signingTimestamp)")
+                    sendSignedPermission()
+                }
+            case let m as BolusPermissionResponse:
+                print("[permission] status=\(m.status) granted=\(m.granted) bolusId=\(m.bolusId) nackReason=\(m.nackReasonId)")
+                if m.granted {
+                    print("[permission] ✅ pump ACCEPTED the signature and granted permission (no insulin delivered)")
+                    releasePermission(bolusId: m.bolusId)
+                } else {
+                    print("[permission] ❌ not granted — check signature/timestamp or pump state")
+                }
             default: print("[status] opcode \(parsed.opCode)")
             }
         } else {
@@ -131,15 +175,22 @@ switch args.first {
 case nil, "":
     serializationSelfCheck()
 case "scan":
-    let m = Monitor(scanOnly: true); _ = m
+    let m = Monitor(mode: .scan); _ = m
     print("Scanning for pumps — Ctrl-C to stop.")
     RunLoop.main.run()
 case "monitor":
-    let m = Monitor(scanOnly: false); _ = m
+    let m = Monitor(mode: .monitor); _ = m
     print("READ-ONLY monitor — connect, JPAKE pair, poll status. No writes that change pump state. Ctrl-C to stop.")
+    RunLoop.main.run()
+case "permission-test":
+    // Signed-write validation that delivers NO insulin: pair → sign a BolusPermissionRequest
+    // → release. Delivery (InitiateBolus) is still hard-blocked (writePolicy .allowNonDelivery).
+    let m = Monitor(mode: .permissionTest); _ = m
+    print("SIGNATURE TEST — pair, then send a SIGNED bolus-permission (NO insulin delivered) to")
+    print("prove the pump accepts our HMAC. Delivery is hard-blocked. Ctrl-C to stop.")
     RunLoop.main.run()
 default:
     print("unknown command: \(args[0])")
-    print("commands: (none)=self-check, scan, monitor")
+    print("commands: (none)=self-check, scan, monitor, permission-test")
     exit(2)
 }

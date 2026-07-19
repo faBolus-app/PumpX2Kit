@@ -34,15 +34,26 @@ public final class PumpBLEClient: NSObject {
         case notReady
         case unknownCharacteristic(Characteristic)
         case writeFailed(Characteristic)
-        /// A CONTROL/insulin-affecting message was attempted while `readOnly` is set.
-        case readOnlyModeBlockedWrite(opcode: UInt8)
+        /// A message was refused by the current `writePolicy`.
+        case writeBlocked(policy: WritePolicy, opcode: UInt8)
     }
 
-    /// Read-only safety mode. When true, `send()` HARD-REFUSES any CONTROL-characteristic or
-    /// insulin-affecting/signed message — only status reads (and the AUTHORIZATION pairing
-    /// handshake) are allowed. Use this for the first bench sessions so the app physically
-    /// cannot command a bolus. Defaults to true; a caller must opt out explicitly.
-    public var readOnly: Bool = true
+    /// Graded write safety. Governs which outgoing messages `send()` permits — a defense-in-
+    /// depth interlock so delivery can only happen after a deliberate, explicit opt-in.
+    public enum WritePolicy: Sendable, Equatable {
+        /// Reads + pairing only. Blocks anything on CONTROL, any signed message, or anything
+        /// insulin-affecting. The safe default.
+        case readOnly
+        /// Allow signed CONTROL messages that do NOT dispense (bolus permission/release,
+        /// cancel), but still HARD-BLOCK insulin delivery (`modifiesInsulinDelivery`). Used to
+        /// validate signing on hardware without dispensing.
+        case allowNonDelivery
+        /// Allow everything, including insulin delivery. BENCH SALINE ONLY.
+        case allowDelivery
+    }
+
+    /// Current write policy. Defaults to `.readOnly`; callers must opt in explicitly.
+    public var writePolicy: WritePolicy = .readOnly
 
     public weak var delegate: PumpBLEClientDelegate?
     public private(set) var state: State = .unknown {
@@ -96,13 +107,18 @@ public final class PumpBLEClient: NSObject {
         pumpTimeSinceReset: UInt32 = 0,
         allowInsulinDelivery: Bool = false
     ) throws -> UInt8 {
-        // Read-only interlock: refuse anything that could change pump state. AUTHORIZATION
-        // (pairing) and CURRENT_STATUS (reads) are permitted; CONTROL and any signed /
-        // insulin-affecting message are blocked.
-        if readOnly && (message.characteristic == .control
-                        || message.signed
-                        || message.props.modifiesInsulinDelivery) {
-            throw ClientError.readOnlyModeBlockedWrite(opcode: message.opCode)
+        // Write interlock (defense in depth): refuse messages the current policy disallows.
+        switch writePolicy {
+        case .readOnly:
+            if message.characteristic == .control || message.signed || message.props.modifiesInsulinDelivery {
+                throw ClientError.writeBlocked(policy: writePolicy, opcode: message.opCode)
+            }
+        case .allowNonDelivery:
+            if message.props.modifiesInsulinDelivery {
+                throw ClientError.writeBlocked(policy: writePolicy, opcode: message.opCode)
+            }
+        case .allowDelivery:
+            break
         }
         guard state == .ready, let peripheral,
               let cbChar = characteristics[message.characteristic] else {
