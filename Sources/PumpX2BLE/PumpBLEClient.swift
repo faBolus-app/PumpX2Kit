@@ -68,9 +68,16 @@ public final class PumpBLEClient: NSObject {
     private var reassembly: [Characteristic: PacketReassembler] = [:]
     private let txIds = TransactionId()
 
-    public override init() {
+    /// Optional CoreBluetooth state-restoration identifier. When set, iOS preserves the central
+    /// manager across app termination and relaunches the app on pump BLE events, calling
+    /// `willRestoreState`. Requires the app's `bluetooth-central` background mode.
+    public init(restoreIdentifier: String? = nil) {
         super.init()
-        self.central = CBCentralManager(delegate: self, queue: .main)
+        var options: [String: Any] = [:]
+        if let restoreIdentifier {
+            options[CBCentralManagerOptionRestoreIdentifierKey] = restoreIdentifier
+        }
+        self.central = CBCentralManager(delegate: self, queue: .main, options: options)
     }
 
     // MARK: - Public API
@@ -85,13 +92,18 @@ public final class PumpBLEClient: NSObject {
 
     public func connect(_ peripheral: CBPeripheral) {
         stopScan()
+        intentionalDisconnect = false
         self.peripheral = peripheral
         peripheral.delegate = self
         state = .connecting
         central.connect(peripheral)
     }
 
+    /// Set when the user (not a range/BLE drop) asks to disconnect, so we don't auto-reconnect.
+    private var intentionalDisconnect = false
+
     public func disconnect() {
+        intentionalDisconnect = true
         if let p = peripheral { central.cancelPeripheralConnection(p) }
     }
 
@@ -169,6 +181,25 @@ extension PumpBLEClient: CBCentralManagerDelegate {
         MainActor.assumeIsolated { state = mapCentralState(central.state) }
     }
 
+    /// State restoration: iOS relaunched us (e.g. after termination) with the pump connection
+    /// preserved. Re-adopt the restored peripheral so notifications/reconnect resume without a
+    /// fresh scan. Discovery/subscription continues via the normal delegate callbacks.
+    public nonisolated func centralManager(_ central: CBCentralManager,
+                                           willRestoreState dict: [String: Any]) {
+        MainActor.assumeIsolated {
+            let restored = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral]
+            guard let p = restored?.first else { return }
+            self.peripheral = p
+            p.delegate = self
+            state = (p.state == .connected) ? .discovering : .connecting
+            if p.state == .connected {
+                p.discoverServices([CBUUID(nsuuid: ServiceUUID.pumpService)])
+            } else {
+                central.connect(p)
+            }
+        }
+    }
+
     public nonisolated func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                                            advertisementData: [String: Any], rssi RSSI: NSNumber) {
         MainActor.assumeIsolated { notify { $0.pumpClient(self, didDiscover: peripheral, rssi: RSSI.intValue) } }
@@ -188,6 +219,15 @@ extension PumpBLEClient: CBCentralManagerDelegate {
             reassembly.removeAll()
             state = .disconnected
             if let error { notify { $0.pumpClient(self, didError: error) } }
+            // Auto-reconnect on an unintended drop (e.g. out of range): a pending connect
+            // persists in CoreBluetooth and completes when the pump comes back in range, in the
+            // foreground or background — no manual "Connect" needed.
+            if !intentionalDisconnect {
+                self.peripheral = peripheral
+                peripheral.delegate = self
+                state = .connecting
+                central.connect(peripheral)
+            }
         }
     }
 
