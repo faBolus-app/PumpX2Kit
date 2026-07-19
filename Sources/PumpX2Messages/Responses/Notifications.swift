@@ -225,9 +225,11 @@ public struct DismissNotificationRequest: Message {
     }
 }
 
-/// Ack for a DismissNotificationRequest (opcode 185, 1 byte). `status` 0 usually = success.
+/// Ack for a DismissNotificationRequest (opcode 185, 1 byte, **signed**). `status` 0 = success.
+/// The pump sends this as a *signed* CONTROL response (24-byte HMAC trailer), so it must be marked
+/// `signed` or the parser rejects it and the ack never arrives ("no pump response").
 public struct DismissNotificationResponse: ResponseMessage {
-    public static let props = MessageProps(opCode: 185, size: 1, type: .response, characteristic: .control)
+    public static let props = MessageProps(opCode: 185, size: 1, signed: true, type: .response, characteristic: .control)
     public var cargo: [UInt8]
     public private(set) var status: Int = -1
     public init() { cargo = [] }
