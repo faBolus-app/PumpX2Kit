@@ -87,6 +87,7 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
         try? client.send(CurrentEgvGuiDataV2Request())
         try? client.send(CurrentBasalStatusRequest())
         try? client.send(LastBolusStatusV2Request())
+        try? client.send(BolusCalcDataSnapshotRequest())
     }
 
     func startPolling() {
@@ -107,11 +108,15 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
             case let m as InsulinStatusResponse: print("[status] insulin remaining = \(m.currentInsulinAmount) u")
             case let m as CurrentBatteryV2Response: print("[status] battery = \(m.batteryPercent)%")
             case let m as CurrentEgvGuiDataV2Response:
-                print("[status] glucose = \(m.hasValidReading ? "\(m.cgmReading)" : "--") mg/dL \(m.trendArrow) (trendRate=\(m.trendRate))")
+                print("[status] glucose = \(m.hasValidReading ? "\(m.cgmReading)" : "--") mg/dL \(m.trendArrow) (status=\(m.egvStatusId) trendRate=\(m.trendRate))")
             case let m as CurrentBasalStatusResponse:
                 print("[status] basal = \(m.currentBasalUnitsPerHour) u/hr")
             case let m as LastBolusStatusV2Response:
                 print("[status] last bolus = \(m.deliveredUnits) u (id \(m.bolusId))")
+            case let m as BolusCalcDataSnapshotResponse:
+                print("[status] calc — carbRatio raw=\(m.carbRatio) (~\(m.carbRatioGramsPerUnit) g/u) "
+                    + "isf/correctionFactor=\(m.isf) mg/dL/u targetBG=\(m.targetBg) mg/dL "
+                    + "carbEntryEnabled=\(m.carbEntryEnabled) maxBolus=\(Double(m.maxBolusAmount)/1000.0)u")
             default: print("[status] opcode \(parsed.opCode)")
             }
         } else {

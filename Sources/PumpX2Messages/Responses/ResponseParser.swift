@@ -27,6 +27,7 @@ public enum ResponseParser {
         CurrentEgvGuiDataV2Response.props.opCode: { CurrentEgvGuiDataV2Response(cargo: $0) },
         CurrentBasalStatusResponse.props.opCode: { CurrentBasalStatusResponse(cargo: $0) },
         LastBolusStatusV2Response.props.opCode: { LastBolusStatusV2Response(cargo: $0) },
+        BolusCalcDataSnapshotResponse.props.opCode: { BolusCalcDataSnapshotResponse(cargo: $0) },
         BolusPermissionResponse.props.opCode: { BolusPermissionResponse(cargo: $0) },
         InitiateBolusResponse.props.opCode:   { InitiateBolusResponse(cargo: $0) },
     ]
@@ -38,6 +39,7 @@ public enum ResponseParser {
         CurrentEgvGuiDataV2Response.props.opCode: CurrentEgvGuiDataV2Response.props.size,
         CurrentBasalStatusResponse.props.opCode: CurrentBasalStatusResponse.props.size,
         LastBolusStatusV2Response.props.opCode: LastBolusStatusV2Response.props.size,
+        BolusCalcDataSnapshotResponse.props.opCode: BolusCalcDataSnapshotResponse.props.size,
         BolusPermissionResponse.props.opCode: BolusPermissionResponse.props.size,
         InitiateBolusResponse.props.opCode: InitiateBolusResponse.props.size,
     ]
@@ -69,7 +71,10 @@ public enum ResponseParser {
         let cargo = Array(body[3..<(3 + cargoLen)])
 
         guard let make = factories[opCode] else { throw ParseError.unknownOpcode(opCode) }
-        if let expected = expectedSizes[opCode], expected != cargo.count {
+        // Require at least the expected cargo, but tolerate extra trailing bytes: newer pump
+        // firmware (e.g. Control-IQ+ 7.10.x EGV) appends fields we don't parse. Parsers only
+        // read known offsets, so longer cargo is safe.
+        if let expected = expectedSizes[opCode], cargo.count < expected {
             throw ParseError.cargoLengthMismatch(opcode: opCode, expected: expected, got: cargo.count)
         }
         return Parsed(opCode: opCode, txId: txId, message: make(cargo))

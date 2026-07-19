@@ -59,11 +59,13 @@ import Testing
 
     @Test func egvGuiDataV2ResponseParses() throws {
         // [bgReadingTimestampSeconds, cgmReading, egvStatusId, trendRate]
+        // egvStatusId 1 = VALID
         let packets = try OracleRunner.encode(
-            txId: 7, messageName: "CurrentEgvGuiDataV2Response", json: "[461589432, 142, 0, 12]").packets
+            txId: 7, messageName: "CurrentEgvGuiDataV2Response", json: "[461589432, 142, 1, 12]").packets
         let msg = try #require(try ResponseParser.parse(frame: frame(packets)).message as? CurrentEgvGuiDataV2Response)
         #expect(msg.cgmReading == 142)
         #expect(msg.trendRate == 12)
+        #expect(msg.egvStatusId == 1)
         #expect(msg.hasValidReading)
     }
 

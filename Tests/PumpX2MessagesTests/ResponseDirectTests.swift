@@ -1,0 +1,41 @@
+import Testing
+@testable import PumpX2Messages
+
+/// Direct (non-oracle) parse tests for responses whose oracle encoding is awkward (many
+/// constructor args) or whose real firmware cargo is longer than the base size. Offsets mirror
+/// upstream `parse()`.
+@Suite struct ResponseDirectTests {
+    /// BolusCalcDataSnapshotResponse: verify carbRatio / isf / targetBg offsets.
+    @Test func bolusCalcSnapshotOffsets() {
+        var cargo = [UInt8](repeating: 0, count: 46)
+        // targetBg (short @9) = 110
+        let tb = Bytes.firstTwoBytesLittleEndian(110); cargo[9] = tb[0]; cargo[10] = tb[1]
+        // isf (short @11) = 40
+        let isf = Bytes.firstTwoBytesLittleEndian(40); cargo[11] = isf[0]; cargo[12] = isf[1]
+        cargo[13] = 1  // carbEntryEnabled
+        // carbRatio (uint32 @14) = 10000  (10 g/u ×1000)
+        let cr = Bytes.toUint32(10000); for i in 0..<4 { cargo[14 + i] = cr[i] }
+        // maxBolusAmount (short @18) = 25000 milliunits
+        let mb = Bytes.firstTwoBytesLittleEndian(25000); cargo[18] = mb[0]; cargo[19] = mb[1]
+
+        let m = BolusCalcDataSnapshotResponse(cargo: cargo)
+        #expect(m.targetBg == 110)
+        #expect(m.isf == 40)
+        #expect(m.carbEntryEnabled)
+        #expect(m.carbRatio == 10000)
+        #expect(m.carbRatioGramsPerUnit == 10.0)
+        #expect(m.maxBolusAmount == 25000)
+    }
+
+    /// EGV V2 parses a 9-byte cargo (Control-IQ+ firmware appends a trailing byte); a VALID
+    /// status (1) with an in-range reading is displayable.
+    @Test func egvV2NineByteCargo() {
+        // From a real pump frame c1 08 09 | c5 67 e2 22 9e 00 01 04 00 | crc
+        let cargo: [UInt8] = [0xc5, 0x67, 0xe2, 0x22, 0x9e, 0x00, 0x01, 0x04, 0x00]
+        let m = CurrentEgvGuiDataV2Response(cargo: cargo)
+        #expect(m.cgmReading == 158)
+        #expect(m.egvStatusId == 1)   // VALID
+        #expect(m.trendRate == 4)
+        #expect(m.hasValidReading)
+    }
+}

@@ -94,8 +94,10 @@ public struct CurrentEgvGuiDataV2Response: ResponseMessage {
         default: return "⇈"
         }
     }
-    /// True when the CGM reading is valid/displayable (egvStatusId 0 = normal in observed data).
-    public var hasValidReading: Bool { cgmReading > 0 && cgmReading < 600 }
+    /// EGV status per upstream: 0=INVALID, 1=VALID, 2=LOW, 3=HIGH, 4=UNAVAILABLE.
+    public var hasValidReading: Bool {
+        (egvStatusId == 1 || egvStatusId == 2 || egvStatusId == 3) && cgmReading > 0 && cgmReading < 600
+    }
 }
 
 /// Basal rate. `response/currentStatus/CurrentBasalStatusResponse` (opcode 41, 9 bytes).
@@ -137,6 +139,39 @@ public struct LastBolusStatusV2Response: ResponseMessage {
     }
     public mutating func parse(_ raw: [UInt8]) { self = LastBolusStatusV2Response(cargo: raw) }
     public var deliveredUnits: Double { Double(deliveredVolume) / 1000.0 }
+}
+
+/// Bolus-calculator snapshot — the therapy settings needed to turn carbs/BG into units, the
+/// way controlX2 does. `response/currentStatus/BolusCalcDataSnapshotResponse` (opcode 115).
+/// `carbRatio` (uint32) and `isf`/`correctionFactor` (mg/dL per unit) + `targetBg` drive the
+/// carb-entry bolus feature.
+public struct BolusCalcDataSnapshotResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 115, size: 46, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var correctionFactor: Int = 0
+    public private(set) var iob: UInt32 = 0
+    public private(set) var cartridgeRemainingInsulin: Int = 0
+    public private(set) var targetBg: Int = 0                // mg/dL
+    public private(set) var isf: Int = 0                     // correction factor, mg/dL per unit
+    public private(set) var carbEntryEnabled: Bool = false
+    public private(set) var carbRatio: UInt32 = 0            // see carbRatioGramsPerUnit
+    public private(set) var maxBolusAmount: Int = 0          // milliunits
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        correctionFactor = Bytes.readShort(raw, 1)
+        iob = Bytes.readUint32(raw, 3)
+        cartridgeRemainingInsulin = Bytes.readShort(raw, 7)
+        targetBg = Bytes.readShort(raw, 9)
+        isf = Bytes.readShort(raw, 11)
+        carbEntryEnabled = raw[13] != 0
+        carbRatio = Bytes.readUint32(raw, 14)
+        maxBolusAmount = Bytes.readShort(raw, 18)
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = BolusCalcDataSnapshotResponse(cargo: raw) }
+    /// Tandem stores carbRatio scaled ×1000 (e.g. 10 g/u → 10000). VERIFY against the pump
+    /// screen before relying on it for dosing.
+    public var carbRatioGramsPerUnit: Double { Double(carbRatio) / 1000.0 }
 }
 
 /// Bolus permission grant. `response/control/BolusPermissionResponse` (opcode 163, 6 bytes).
