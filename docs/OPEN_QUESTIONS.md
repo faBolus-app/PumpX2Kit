@@ -16,17 +16,21 @@ These are written but **cannot be validated without a physical pump/phone/watch*
 3. **Pump firmware version + pairing type** to pin (`PINNED.md` TODO). Determines whether we
    use legacy 16-char pairing (implemented) or JPAKE (not implemented — see below).
 
-## Blocker needing a crypto decision
-4. **JPAKE (6-digit) pairing is NOT implemented.** Modern t:slim X2 firmware (v7.7+, API 3.2+)
-   and Mobi use an elliptic-curve J-PAKE handshake. Upstream relies on the native
-   `io.particle.crypto.EcJpake` library; there's no drop-in Swift equivalent.
-   **Question:** which pairing does the bench pump use? If JPAKE, we need to either (a) port
-   an EC J-PAKE implementation to Swift (significant, safety-critical crypto — likely over
-   secp256r1; would validate against the oracle's `jpake`/`jpake-server` commands), or
-   (b) confirm the bench pump can use legacy 16-char pairing. The legacy path
-   (`PairingAuth.createV1`) is done and unit-tested.
-   - The JPAKE *wire* message classes (`Jpake1a…4`) are not yet ported either; only the
-     legacy `CentralChallenge`/`PumpChallenge` messages are.
+## JPAKE (6-digit) pairing — IMPLEMENTED (crypto validated in-process)
+4. **Resolved approach:** vendored **mbedTLS `ecjpake`** (v3.6.7 submodule, secp256r1/SHA-256)
+   as a C-interop target (`CMbedTLSJPAKE`), wrapped by `PumpX2Auth.JpakeAuth`. Both pairing
+   paths now exist: legacy 16-char (`PairingAuth.createV1`) and modern 6-digit JPAKE.
+   - JPAKE wire messages `Jpake1a…4` ported (framing byte-exact vs oracle).
+   - Crypto validated by an **in-process client↔server handshake deriving equal secrets** +
+     rounds-3/4 HMAC key confirmation (`JpakeTests`).
+   - **Remaining validation (not blocking further build):**
+     (a) **Oracle interop** — drive the oracle's `jpake-server` (stdin/stdout ping-pong) with
+         our Swift client and confirm the derived secret matches the server's. This proves
+         compatibility with the pump's exact implementation (upstream uses mbedTLS via
+         Particle, so interop is expected). Deferred; good CI/bench step.
+     (b) **Bench** — real pairing against the test pump.
+   - **Question:** the app should auto-select pairing type; confirm the bench pump's exact
+     firmware so we pin it (`PINNED.md`).
 
 ## Decisions to confirm
 5. **Repo visibility** — both repos were created **private** on GitHub (sensible default for a

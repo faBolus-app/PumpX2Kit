@@ -2,3 +2,6 @@
 	path = vendor/pumpx2-oracle
 	url = https://github.com/jwoglom/pumpx2
 	shallow = true
+[submodule "vendor/mbedtls"]
+	path = vendor/mbedtls
+	url = https://github.com/Mbed-TLS/mbedtls.git

@@ -22,9 +22,26 @@ let package = Package(
         // No platform dependencies — compiles everywhere.
         .target(name: "PumpX2Messages"),
 
+        // Vendored mbedTLS EC-JPAKE (secp256r1/SHA-256), pinned submodule at
+        // vendor/mbedtls (v3.6.7, Apache-2.0). The needed mbedTLS .c files are symlinked into
+        // mbedtls_lib/ (see scripts/link-mbedtls.sh) and compiled as separate TUs alongside
+        // our shim. Only cmbedtls_jpake.h is exposed to Swift — mbedTLS headers are reached
+        // via header search paths, so the full (unparseable-under-min-config) header tree is
+        // never turned into a module. Custom minimal config drops PSA/SSL/entropy.
+        .target(
+            name: "CMbedTLSJPAKE",
+            cSettings: [
+                .headerSearchPath("include"),
+                .headerSearchPath("../../vendor/mbedtls/include"),
+                .headerSearchPath("../../vendor/mbedtls/library"),
+                .unsafeFlags(["-DMBEDTLS_CONFIG_FILE=\"mbedtls_config_min.h\""]),
+            ]
+        ),
+
         // Pairing handshake (legacy CentralChallenge + modern JPAKE) and per-command
         // HMAC signing. Depends on Messages for message shapes and byte helpers.
-        .target(name: "PumpX2Auth", dependencies: ["PumpX2Messages"]),
+        .target(name: "PumpX2Auth", dependencies: ["PumpX2Messages", "CMbedTLSJPAKE"]),
+        // (CMbedTLSJPAKE compiles the vendored mbedTLS EC-JPAKE sources; see above.)
 
         // Core Bluetooth central transport. Platform-agnostic (iOS + watchOS): imports
         // CoreBluetooth only, never UIKit.

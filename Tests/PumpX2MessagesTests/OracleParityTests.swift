@@ -84,6 +84,35 @@ struct OracleParityTests {
         #expect(try swiftPackets(msg, txId: 2) == oracle)
     }
 
+    // MARK: - JPAKE wire messages (framing only; EC-JPAKE bytes are non-deterministic)
+
+    @Test func jpake1aRequestMatchesOracle() throws {
+        let challenge = (0..<165).map { UInt8($0 & 0xFF) }
+        let hex = Hex.encode(challenge)
+        let msg = Jpake1aRequest(appInstanceId: 0, centralChallenge: challenge)
+        let oracle = try OracleRunner.encode(
+            txId: 0, messageName: "Jpake1aRequest",
+            json: "{\"appInstanceId\":0,\"centralChallenge\":\"\(hex)\"}").packets
+        #expect(try swiftPackets(msg, txId: 0) == oracle)
+    }
+
+    // Jpake3's two 1-arg constructors are ambiguous to the oracle's reflection encoder, so
+    // assert its cargo directly (Packetize framing is validated by the other oracle tests).
+    @Test func jpake3SessionKeyRequestCargo() {
+        #expect(Jpake3SessionKeyRequest(challengeParam: 1).cargo == [0x01, 0x00])
+        #expect(Jpake3SessionKeyRequest.props.opCode == 38)
+    }
+
+    @Test func jpake4KeyConfirmationRequestMatchesOracle() throws {
+        let nonce = (0..<8).map { UInt8($0) }
+        let reserved = [UInt8](repeating: 0, count: 8)
+        let hashDigest = (0..<32).map { UInt8($0 + 100) }
+        let msg = Jpake4KeyConfirmationRequest(appInstanceId: 0, nonce: nonce, reserved: reserved, hashDigest: hashDigest)
+        let json = "{\"appInstanceId\":0,\"nonce\":\"\(Hex.encode(nonce))\",\"reserved\":\"\(Hex.encode(reserved))\",\"hashDigest\":\"\(Hex.encode(hashDigest))\"}"
+        let oracle = try OracleRunner.encode(txId: 6, messageName: "Jpake4KeyConfirmationRequest", json: json).packets
+        #expect(try swiftPackets(msg, txId: 6) == oracle)
+    }
+
     // MARK: - Signed bolus flow
 
     /// Serializes a signed `message` with the shared test pairing code / pump time, matching
