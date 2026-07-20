@@ -140,4 +140,10 @@ public struct HistoryLogStreamResponse: ResponseMessage {
     public var bolusRecords: [BolusHistoryRecord] {
         records.compactMap { HistoryLog.parseBolusRecord($0) }
     }
+
+    /// Every record decoded into a typed `HistoryLogEvent` (A4), in wire order. Unknown typeIds
+    /// decode to `UnknownHistoryLog`. This is what a logbook renders.
+    public var events: [any HistoryLogEvent] {
+        records.map { HistoryLogParser.parse(record: $0) }
+    }
 }
