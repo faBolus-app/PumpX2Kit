@@ -21,6 +21,7 @@ public enum ResponseParser {
 
     /// Registry of known response opcodes → factory. Extend as more responses are ported.
     static let factories: [UInt8: @Sendable ([UInt8]) -> any Message] = [
+        ApiVersionResponse.props.opCode:      { ApiVersionResponse(cargo: $0) },
         ControlIQIOBResponse.props.opCode:    { ControlIQIOBResponse(cargo: $0) },
         InsulinStatusResponse.props.opCode:   { InsulinStatusResponse(cargo: $0) },
         CurrentBatteryV2Response.props.opCode: { CurrentBatteryV2Response(cargo: $0) },
@@ -45,6 +46,7 @@ public enum ResponseParser {
     ]
 
     static let expectedSizes: [UInt8: Int] = [
+        ApiVersionResponse.props.opCode: ApiVersionResponse.props.size,
         ControlIQIOBResponse.props.opCode: ControlIQIOBResponse.props.size,
         InsulinStatusResponse.props.opCode: InsulinStatusResponse.props.size,
         CurrentBatteryV2Response.props.opCode: CurrentBatteryV2Response.props.size,

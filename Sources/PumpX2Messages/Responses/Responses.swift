@@ -7,6 +7,27 @@ public protocol ResponseMessage: Message {
     init(cargo: [UInt8])
 }
 
+/// Pump API version (major/minor). `response/currentStatus/ApiVersionResponse` (opcode 33, 4 bytes).
+/// The API version identifies the pump family — t:slim X2 is 2.x–3.4, **Mobi is 3.5+** (mirrors
+/// jwoglom `KnownApiVersion`), so this is a first-class pump-model signal.
+public struct ApiVersionResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 33, size: 4, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var majorVersion: Int = 0
+    public private(set) var minorVersion: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        if raw.count >= 4 {
+            majorVersion = Bytes.readShort(raw, 0)
+            minorVersion = Bytes.readShort(raw, 2)
+        }
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = ApiVersionResponse(cargo: raw) }
+    /// True when the pump is a Tandem Mobi (API 3.5+); t:slim X2 is 2.x–3.4.
+    public var isMobi: Bool { majorVersion > 3 || (majorVersion == 3 && minorVersion >= 5) }
+}
+
 /// IOB read (Control-IQ). `response/currentStatus/ControlIQIOBResponse` (opcode 109, 17 bytes).
 public struct ControlIQIOBResponse: ResponseMessage {
     public static let props = MessageProps(opCode: 109, size: 17, type: .response, characteristic: .currentStatus)

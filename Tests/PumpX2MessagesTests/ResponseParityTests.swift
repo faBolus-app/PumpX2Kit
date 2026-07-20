@@ -16,6 +16,17 @@ import Testing
         return out
     }
 
+    @Test func apiVersionResponseParsesAndDetectsModel() throws {
+        // Mobi = API 3.5+; t:slim X2 = 2.x–3.4.
+        let mobi = try OracleRunner.encode(txId: 6, messageName: "ApiVersionResponse", json: "[3, 5]").packets
+        let m = try #require(try ResponseParser.parse(frame: frame(mobi)).message as? ApiVersionResponse)
+        #expect(m.majorVersion == 3 && m.minorVersion == 5)
+        #expect(m.isMobi)
+        let tslim = try OracleRunner.encode(txId: 6, messageName: "ApiVersionResponse", json: "[3, 2]").packets
+        let t = try #require(try ResponseParser.parse(frame: frame(tslim)).message as? ApiVersionResponse)
+        #expect(!t.isMobi)
+    }
+
     @Test func controlIQIOBResponseParses() throws {
         let packets = try OracleRunner.encode(
             txId: 1, messageName: "ControlIQIOBResponse", json: "[240, 17940, 240, 240, 0]").packets
