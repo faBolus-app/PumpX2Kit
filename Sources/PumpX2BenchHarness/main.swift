@@ -235,7 +235,7 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
     func pumpClient(_ c: PumpBLEClient, didReceiveFrame frame: [UInt8], on ch: Characteristic) {
         if ch == .authorization {
             coordinator?.handle(frame: frame)
-        } else if let parsed = try? ResponseParser.parse(frame: frame) {
+        } else if let parsed = try? ResponseParser.parse(frame: frame, characteristic: ch) {
             switch parsed.message {
             case let m as ControlIQIOBResponse:
                 // iobUnits uses swan6hrIOB (matches the pump display, verified on hardware).

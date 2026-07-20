@@ -176,6 +176,19 @@ struct OracleParityTests {
         #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
     }
 
+    @Test func setTempRateRequestMatchesOracle() throws {
+        // 30 minutes at 150% — cargo: uint32 ms (30*60000) + LE uint16 percent.
+        let oracle = try oracleSignedPackets("SetTempRateRequest", txId: 7, json: "[30, 150]")
+        let swift = try swiftSignedPackets(SetTempRateRequest(minutes: 30, percent: 150), txId: 7)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func stopTempRateRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("StopTempRateRequest", txId: 8)
+        let swift = try swiftSignedPackets(StopTempRateRequest(), txId: 8)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
     /// The crown jewel: a 1.0u standard bolus initiate, signed, byte-exact vs the oracle.
     @Test func initiateBolusRequestMatchesOracle() throws {
         // positional args: totalVolume, bolusID, bolusTypeBitmask, foodVolume,

@@ -115,6 +115,42 @@ public struct ResumePumpingResponse: ResponseMessage {
     public var accepted: Bool { status == 0 }
 }
 
+/// Ack for a set-temp-rate command (signed). `response/control/SetTempRateResponse` (op 0xA5, 4B).
+/// `tempRateId` cross-references the `TempRateActivatedHistoryLog` event.
+public struct SetTempRateResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0xA5, size: 4, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public private(set) var tempRateId = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        if !raw.isEmpty { status = Int(raw[0]) }
+        if raw.count >= 3 { tempRateId = Bytes.readShort(raw, 1) }
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = SetTempRateResponse(cargo: raw) }
+    /// status 0 = accepted.
+    public var accepted: Bool { status == 0 }
+}
+
+/// Ack for a stop-temp-rate command (signed). `response/control/StopTempRateResponse` (op 0xA7, 3B).
+/// `tempRateId` cross-references the `TempRateCompletedHistoryLog` event.
+public struct StopTempRateResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0xA7, size: 3, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public private(set) var tempRateId = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        if !raw.isEmpty { status = Int(raw[0]) }
+        if raw.count >= 3 { tempRateId = Bytes.readShort(raw, 1) }
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = StopTempRateResponse(cargo: raw) }
+    /// status 0 = accepted.
+    public var accepted: Bool { status == 0 }
+}
+
 /// Pump firmware/hardware version + identifiers. `response/currentStatus/PumpVersionResponse`
 /// (op 85, 48B).
 public struct PumpVersionResponse: ResponseMessage {

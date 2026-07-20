@@ -132,6 +132,47 @@ import Testing
         #expect(alarm.cargo == [2, 0, 0, 0, 2, 1])
     }
 
+    /// LastBGResponse: bgTimestamp u32@0, bgValue short@4, bgSourceId@6. Direct test because the
+    /// oracle can't deterministically construct it (two ambiguous 3-arg constructors upstream).
+    @Test func lastBGResponseOffsets() {
+        var cargo = [UInt8](repeating: 0, count: 7)
+        let ts = Bytes.toUint32(461_589_432); for i in 0..<4 { cargo[i] = ts[i] }
+        let bg = Bytes.firstTwoBytesLittleEndian(142); cargo[4] = bg[0]; cargo[5] = bg[1]
+        cargo[6] = 0  // MANUAL
+        let m = LastBGResponse(cargo: cargo)
+        #expect(m.bgValue == 142)
+        #expect(m.bgSourceId == 0)
+    }
+
+    /// SetTempRate / StopTempRate response offsets: status@0, tempRateId short@1. The oracle's own
+    /// `SetTempRateResponse(int,int)` constructor is broken upstream (declares size=4 but buildCargo
+    /// emits 3 bytes → Validate throws), so this is a direct offset test.
+    @Test func tempRateResponseOffsets() {
+        let set = SetTempRateResponse(cargo: [0x00, 0x05, 0x00, 0x00])
+        #expect(set.accepted && set.tempRateId == 5)
+        let stop = StopTempRateResponse(cargo: [0x00, 0x07, 0x00])
+        #expect(stop.accepted && stop.tempRateId == 7)
+        // Non-zero status = rejected.
+        #expect(!SetTempRateResponse(cargo: [0x02, 0x00, 0x00, 0x00]).accepted)
+    }
+
+    /// The reason ResponseParser is characteristic-keyed: opcode 165 is `SetTempRateResponse` on
+    /// CONTROL but `LastBolusStatusV2Response` on CURRENT_STATUS. Dispatch a hand-built signed
+    /// CONTROL frame at opcode 165 and confirm it resolves to SetTempRateResponse, not the
+    /// currentStatus type sharing that opcode.
+    @Test func opcodeCollisionResolvesByCharacteristic() throws {
+        #expect(SetTempRateResponse.props.opCode == LastBolusStatusV2Response.props.opCode)
+        // Signed frame: cargo (4B) + 24B zero HMAC; length covers both.
+        let cargo: [UInt8] = [0x00, 0x05, 0x00, 0x00]
+        let payload = cargo + [UInt8](repeating: 0, count: 24)
+        let body: [UInt8] = [0xA5, 0x01, UInt8(payload.count)] + payload
+        let frame = body + Bytes.calculateCRC16(body)
+        let parsed = try ResponseParser.parse(frame: frame, characteristic: .control)
+        #expect(parsed.message is SetTempRateResponse)
+        let set = try #require(parsed.message as? SetTempRateResponse)
+        #expect(set.accepted && set.tempRateId == 5)
+    }
+
     /// EGV V2 parses a 9-byte cargo (Control-IQ+ firmware appends a trailing byte); a VALID
     /// status (1) with an in-range reading is displayable.
     @Test func egvV2NineByteCargo() {
