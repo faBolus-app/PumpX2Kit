@@ -50,6 +50,8 @@ public enum ResponseParser {
         MalfunctionBitmaskStatusResponse.props.opCode: { MalfunctionBitmaskStatusResponse(cargo: $0) },
         CurrentBolusStatusResponse.props.opCode: { CurrentBolusStatusResponse(cargo: $0) },
         DismissNotificationResponse.props.opCode: { DismissNotificationResponse(cargo: $0) },
+        SuspendPumpingResponse.props.opCode:  { SuspendPumpingResponse(cargo: $0) },
+        ResumePumpingResponse.props.opCode:   { ResumePumpingResponse(cargo: $0) },
     ]
 
     static let expectedSizes: [UInt8: Int] = [
@@ -81,6 +83,8 @@ public enum ResponseParser {
         MalfunctionBitmaskStatusResponse.props.opCode: MalfunctionBitmaskStatusResponse.props.size,
         CurrentBolusStatusResponse.props.opCode: CurrentBolusStatusResponse.props.size,
         DismissNotificationResponse.props.opCode: DismissNotificationResponse.props.size,
+        SuspendPumpingResponse.props.opCode: SuspendPumpingResponse.props.size,
+        ResumePumpingResponse.props.opCode: ResumePumpingResponse.props.size,
     ]
 
     /// Signed responses carry a 24-byte HMAC trailer after the cargo (the declared length
@@ -89,6 +93,8 @@ public enum ResponseParser {
     static let signedOpcodes: Set<UInt8> = [
         BolusPermissionResponse.props.opCode,
         InitiateBolusResponse.props.opCode,
+        SuspendPumpingResponse.props.opCode,
+        ResumePumpingResponse.props.opCode,
     ]
 
     /// Validates CRC + length and dispatches to the matching response type.

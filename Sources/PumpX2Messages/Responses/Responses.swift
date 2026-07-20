@@ -91,6 +91,30 @@ public struct LastBGResponse: ResponseMessage {
     public mutating func parse(_ raw: [UInt8]) { self = LastBGResponse(cargo: raw) }
 }
 
+/// Ack for a suspend-pumping command (signed). `response/control/SuspendPumpingResponse` (op 0x9D, 1B).
+public struct SuspendPumpingResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0x9D, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = SuspendPumpingResponse(cargo: raw) }
+    /// status 0 = accepted.
+    public var accepted: Bool { status == 0 }
+}
+
+/// Ack for a resume-pumping command (signed). `response/control/ResumePumpingResponse` (op 0x9B, 1B).
+public struct ResumePumpingResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0x9B, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = ResumePumpingResponse(cargo: raw) }
+    /// status 0 = accepted.
+    public var accepted: Bool { status == 0 }
+}
+
 /// Pump firmware/hardware version + identifiers. `response/currentStatus/PumpVersionResponse`
 /// (op 85, 48B).
 public struct PumpVersionResponse: ResponseMessage {

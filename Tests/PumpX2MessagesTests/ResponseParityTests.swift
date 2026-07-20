@@ -87,6 +87,15 @@ import Testing
         #expect(msg.batteryPercent == 78)
     }
 
+    @Test func suspendResumePumpingResponsesParse() throws {
+        let s = try OracleRunner.encode(txId: 14, messageName: "SuspendPumpingResponse", json: "[0]").packets
+        let sm = try #require(try ResponseParser.parse(frame: frame(s)).message as? SuspendPumpingResponse)
+        #expect(sm.status == 0 && sm.accepted)
+        let r = try OracleRunner.encode(txId: 15, messageName: "ResumePumpingResponse", json: "[0]").packets
+        let rm = try #require(try ResponseParser.parse(frame: frame(r)).message as? ResumePumpingResponse)
+        #expect(rm.status == 0 && rm.accepted)
+    }
+
     @Test func controlIQIOBResponseParses() throws {
         let packets = try OracleRunner.encode(
             txId: 1, messageName: "ControlIQIOBResponse", json: "[240, 17940, 240, 240, 0]").packets

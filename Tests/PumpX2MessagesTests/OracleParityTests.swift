@@ -164,6 +164,18 @@ struct OracleParityTests {
         #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
     }
 
+    @Test func suspendPumpingRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("SuspendPumpingRequest", txId: 5)
+        let swift = try swiftSignedPackets(SuspendPumpingRequest(), txId: 5)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func resumePumpingRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("ResumePumpingRequest", txId: 6)
+        let swift = try swiftSignedPackets(ResumePumpingRequest(), txId: 6)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
     /// The crown jewel: a 1.0u standard bolus initiate, signed, byte-exact vs the oracle.
     @Test func initiateBolusRequestMatchesOracle() throws {
         // positional args: totalVolume, bolusID, bolusTypeBitmask, foodVolume,
