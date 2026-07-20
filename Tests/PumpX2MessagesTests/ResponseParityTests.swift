@@ -166,6 +166,18 @@ import Testing
         #expect(msg.basalLimitUnitsPerHour == 15.0)
     }
 
+    @Test func controlIQInfoV1ResponseParses() throws {
+        // [closedLoop, weight, weightUnit, TDI, userMode, b6, b7, b8, controlState]
+        let packets = try OracleRunner.encode(
+            txId: 28, messageName: "ControlIQInfoV1Response", json: "[true, 70, 0, 40, 2, 0, 0, 0, 1]").packets
+        let msg = try #require(try parse(packets).message as? ControlIQInfoV1Response)
+        #expect(msg.closedLoopEnabled)
+        #expect(msg.weight == 70)
+        #expect(msg.totalDailyInsulin == 40)
+        #expect(msg.currentUserModeType == 2)
+        #expect(msg.controlStateType == 1)
+    }
+
     @Test func currentBatteryV1ResponseParses() throws {
         let packets = try OracleRunner.encode(
             txId: 13, messageName: "CurrentBatteryV1Response", json: "[50, 78]").packets

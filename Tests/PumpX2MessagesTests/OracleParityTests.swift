@@ -56,6 +56,9 @@ struct OracleParityTests {
         ("CurrentActiveIdpValuesRequest", CurrentActiveIdpValuesRequest()),
         ("GlobalMaxBolusSettingsRequest", GlobalMaxBolusSettingsRequest()),
         ("BasalLimitSettingsRequest", BasalLimitSettingsRequest()),
+        ("ControlIQInfoV1Request", ControlIQInfoV1Request()),
+        ("PumpFeaturesV1Request", PumpFeaturesV1Request()),
+        ("LoadStatusRequest", LoadStatusRequest()),
     ]
 
     @Test(arguments: statusReads)

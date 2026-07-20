@@ -146,3 +146,18 @@ public struct BasalLimitSettingsRequest: EmptyCurrentStatusRequest {
     public var cargo: [UInt8] = []
     public init(emptyCargo: Void = ()) { self.cargo = [] }
 }
+public struct ControlIQInfoV1Request: EmptyCurrentStatusRequest {
+    public static let props = statusProps(104)              // response 105
+    public var cargo: [UInt8] = []
+    public init(emptyCargo: Void = ()) { self.cargo = [] }
+}
+public struct PumpFeaturesV1Request: EmptyCurrentStatusRequest {
+    public static let props = statusProps(78)               // response 79
+    public var cargo: [UInt8] = []
+    public init(emptyCargo: Void = ()) { self.cargo = [] }
+}
+public struct LoadStatusRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(20)               // response 21
+    public var cargo: [UInt8] = []
+    public init(emptyCargo: Void = ()) { self.cargo = [] }
+}

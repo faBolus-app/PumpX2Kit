@@ -132,6 +132,30 @@ import Testing
         #expect(alarm.cargo == [2, 0, 0, 0, 2, 1])
     }
 
+    /// PumpFeaturesV1Response: uint64 feature bitmask @0. Direct test — upstream constructor takes a
+    /// BigInteger the oracle's reflection can't build. Sets Control-IQ (1024) + G6 (2) + BLE pump
+    /// control (268435456) bits.
+    @Test func pumpFeaturesV1Bitmask() {
+        let bits: UInt64 = 1024 | 2 | 268_435_456
+        let m = PumpFeaturesV1Response(cargo: Bytes.toUint64(bits))
+        #expect(m.featureBitmask == bits)
+        #expect(m.controlIQSupported)
+        #expect(m.dexcomG6Supported)
+        #expect(m.blePumpControlSupported)
+        #expect(!m.basalIQSupported)
+        #expect(!m.controlIQProSupported)
+    }
+
+    /// LoadStatusResponse: isLoadingActive@0, loadStateId@1, primeStatusId@2. Direct test — upstream
+    /// has multiple overlapping constructors that make oracle reflection ambiguous.
+    @Test func loadStatusOffsets() {
+        let m = LoadStatusResponse(cargo: [1, 3, 2])
+        #expect(m.isLoadingActive)
+        #expect(m.loadStateId == 3)
+        #expect(m.primeStatusId == 2)
+        #expect(!LoadStatusResponse(cargo: [0, 0, 0]).isLoadingActive)
+    }
+
     /// LastBGResponse: bgTimestamp u32@0, bgValue short@4, bgSourceId@6. Direct test because the
     /// oracle can't deterministically construct it (two ambiguous 3-arg constructors upstream).
     @Test func lastBGResponseOffsets() {

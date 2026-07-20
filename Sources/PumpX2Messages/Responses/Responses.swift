@@ -253,6 +253,75 @@ public struct PumpGlobalsResponse: ResponseMessage {
     public var quickBolusEnabled: Bool { quickBolusEnabledRaw == 1 }
 }
 
+/// Control-IQ info, v1 firmware. `response/currentStatus/ControlIQInfoV1Response` (op 105, 10B).
+/// closedLoop@0, weight short@1, weightUnit@3, totalDailyInsulin@4, currentUserModeType@5,
+/// controlStateType@9. (V2 at op 179 carries exercise fields; this is the older layout.)
+public struct ControlIQInfoV1Response: ResponseMessage {
+    public static let props = MessageProps(opCode: 105, size: 10, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var closedLoopEnabled = false
+    public private(set) var weight = 0
+    public private(set) var weightUnit = 0
+    public private(set) var totalDailyInsulin = 0
+    public private(set) var currentUserModeType = 0
+    public private(set) var controlStateType = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 10 else { return }
+        closedLoopEnabled = raw[0] != 0
+        weight = Bytes.readShort(raw, 1)
+        weightUnit = Int(raw[3])
+        totalDailyInsulin = Int(raw[4])
+        currentUserModeType = Int(raw[5])
+        controlStateType = Int(raw[9])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = ControlIQInfoV1Response(cargo: raw) }
+}
+
+/// Pump feature bitmask (which capabilities the pump firmware supports).
+/// `response/currentStatus/PumpFeaturesV1Response` (op 79, 8B). uint64 bitmask@0.
+public struct PumpFeaturesV1Response: ResponseMessage {
+    public static let props = MessageProps(opCode: 79, size: 8, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var featureBitmask: UInt64 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        if raw.count >= 8 { featureBitmask = Bytes.readUint64(raw, 0) }
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = PumpFeaturesV1Response(cargo: raw) }
+    private func has(_ bit: UInt64) -> Bool { featureBitmask & bit != 0 }
+    public var dexcomG5Supported: Bool { has(1) }
+    public var dexcomG6Supported: Bool { has(2) }
+    public var basalIQSupported: Bool { has(4) }
+    public var controlIQSupported: Bool { has(1024) }
+    public var basalLimitSupported: Bool { has(262144) }
+    public var controlIQProSupported: Bool { has(8388608) }
+    public var blePumpControlSupported: Bool { has(268435456) }
+    public var pumpSettingsInIdpGuiSupported: Bool { has(536870912) }
+}
+
+/// Cartridge-load / prime-tubing status. `response/currentStatus/LoadStatusResponse` (op 21, 3B).
+/// isLoadingActive@0, loadStateId@1, primeStatusId@2.
+public struct LoadStatusResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 21, size: 3, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var isLoadingActiveId = 0
+    public private(set) var loadStateId = 0
+    public private(set) var primeStatusId = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 3 else { return }
+        isLoadingActiveId = Int(raw[0])
+        loadStateId = Int(raw[1])
+        primeStatusId = Int(raw[2])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = LoadStatusResponse(cargo: raw) }
+    public var isLoadingActive: Bool { isLoadingActiveId != 0 }
+}
+
 /// Insulin-delivery-profile (IDP) slot overview. `response/currentStatus/ProfileStatusResponse`
 /// (op 63, 8B). Slot 0 is always the active profile; a slot value of -1 (0xFF) means empty.
 /// numberOfProfiles@0, then slot0..slot5 @1..6, activeSegmentIndex@7. Query slot details with
