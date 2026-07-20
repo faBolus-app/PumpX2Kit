@@ -39,8 +39,6 @@ These are written but **cannot be validated without a physical pump/phone/watch*
    *response* parsing (`PacketArrayList`/`BTResponseParser` + response models) is only
    partially needed for the harness/app and is being ported on demand. Which pump reads does
    the app UI actually need to display first (IOB, battery, insulin remaining, last bolus)?
-7. **Courtesy heads-up to jwoglom** about this independent reimplementation (mentioned in the
-   handoff) — do you want to do that, and when?
 
 ## Environment notes (resolved)
 - Full Xcode 26.6 installed; `xcode-select` still points at CLT (needs
