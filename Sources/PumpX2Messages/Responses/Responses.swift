@@ -253,6 +253,96 @@ public struct PumpGlobalsResponse: ResponseMessage {
     public var quickBolusEnabled: Bool { quickBolusEnabledRaw == 1 }
 }
 
+/// Insulin-delivery-profile (IDP) slot overview. `response/currentStatus/ProfileStatusResponse`
+/// (op 63, 8B). Slot 0 is always the active profile; a slot value of -1 (0xFF) means empty.
+/// numberOfProfiles@0, then slot0..slot5 @1..6, activeSegmentIndex@7. Query slot details with
+/// an IDPSettingsRequest for that id.
+public struct ProfileStatusResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 63, size: 8, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var numberOfProfiles = 0
+    public private(set) var idpSlotIds: [Int] = []        // all six raw slot ids (may be -1)
+    public private(set) var activeSegmentIndex = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 8 else { return }
+        numberOfProfiles = Int(Int8(bitPattern: raw[0]))
+        idpSlotIds = (1...6).map { Int(Int8(bitPattern: raw[$0])) }   // -1 sentinel for empty slots
+        activeSegmentIndex = Int(Int8(bitPattern: raw[7]))
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = ProfileStatusResponse(cargo: raw) }
+    /// The active profile id (always slot 0), or -1 if no profiles exist.
+    public var activeIdpId: Int { idpSlotIds.first ?? -1 }
+    /// Present slot ids restricted to numberOfProfiles.
+    public var presentIdpIds: [Int] { Array(idpSlotIds.prefix(max(0, numberOfProfiles))) }
+}
+
+/// Currently-active IDP parameter values for the active time segment.
+/// `response/currentStatus/CurrentActiveIdpValuesResponse` (op 0x97, 10B). carbRatio uint32@0
+/// (1000-increments), targetBg byte@5, insulinDuration uint16@6 (min), ISF uint16@8.
+///
+/// Byte 6 is shared: upstream reads targetBg as `readShort(raw,5)` and insulinDuration as
+/// `readShort(raw,6)`, which overlap and corrupt targetBg once insulinDuration ≥ 256. targetBg is
+/// always < 256, so we read only its low byte (raw[5]); that keeps both fields correct regardless
+/// of duration (upstream's overlapping short read is effectively a bug for durations ≥ 256 min).
+public struct CurrentActiveIdpValuesResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0x97, size: 10, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var currentCarbRatio = 0            // 1000-increments (10000 = 10 g/U)
+    public private(set) var currentTargetBg = 0             // mg/dL (< 256)
+    public private(set) var currentInsulinDuration = 0      // minutes
+    public private(set) var currentIsf = 0                  // mg/dL per unit
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 10 else { return }
+        currentCarbRatio = Int(Bytes.readUint32(raw, 0))
+        currentTargetBg = Int(raw[5])
+        currentInsulinDuration = Bytes.readShort(raw, 6)
+        currentIsf = Bytes.readShort(raw, 8)
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = CurrentActiveIdpValuesResponse(cargo: raw) }
+    /// Carb ratio in grams per unit.
+    public var carbRatioGramsPerUnit: Double { Double(currentCarbRatio) / 1000.0 }
+}
+
+/// Global max-bolus limit + factory default (milliunits). `GlobalMaxBolusSettingsResponse`
+/// (op 0x8D, 4B). maxBolus short@0, maxBolusDefault short@2.
+public struct GlobalMaxBolusSettingsResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0x8D, size: 4, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var maxBolus = 0                    // milliunits
+    public private(set) var maxBolusDefault = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 4 else { return }
+        maxBolus = Bytes.readShort(raw, 0)
+        maxBolusDefault = Bytes.readShort(raw, 2)
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = GlobalMaxBolusSettingsResponse(cargo: raw) }
+    public var maxBolusUnits: Double { Double(maxBolus) / 1000.0 }
+}
+
+/// Max basal-rate limit + factory default (milliunits/hr). `BasalLimitSettingsResponse`
+/// (op 0x8B, 8B). basalLimit uint32@0, basalLimitDefault uint32@4.
+public struct BasalLimitSettingsResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0x8B, size: 8, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var basalLimit = 0                  // milliunits/hr
+    public private(set) var basalLimitDefault = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 8 else { return }
+        basalLimit = Int(Bytes.readUint32(raw, 0))
+        basalLimitDefault = Int(Bytes.readUint32(raw, 4))
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = BasalLimitSettingsResponse(cargo: raw) }
+    public var basalLimitUnitsPerHour: Double { Double(basalLimit) / 1000.0 }
+}
+
 /// Pump firmware/hardware version + identifiers. `response/currentStatus/PumpVersionResponse`
 /// (op 85, 48B).
 public struct PumpVersionResponse: ResponseMessage {

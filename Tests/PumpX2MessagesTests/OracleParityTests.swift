@@ -52,6 +52,10 @@ struct OracleParityTests {
         ("MalfunctionStatusRequest", MalfunctionStatusRequest()),
         ("HistoryLogStatusRequest", HistoryLogStatusRequest()),
         ("CGMAlertStatusRequest", CGMAlertStatusRequest()),
+        ("ProfileStatusRequest", ProfileStatusRequest()),
+        ("CurrentActiveIdpValuesRequest", CurrentActiveIdpValuesRequest()),
+        ("GlobalMaxBolusSettingsRequest", GlobalMaxBolusSettingsRequest()),
+        ("BasalLimitSettingsRequest", BasalLimitSettingsRequest()),
     ]
 
     @Test(arguments: statusReads)

@@ -127,6 +127,45 @@ import Testing
         #expect(msg.released)
     }
 
+    @Test func profileStatusResponseParses() throws {
+        // [numberOfProfiles, slot0, slot1, slot2, slot3, slot4, slot5, activeSegmentIndex]
+        let packets = try OracleRunner.encode(
+            txId: 24, messageName: "ProfileStatusResponse", json: "[2, 4, 7, -1, -1, -1, -1, 1]").packets
+        let msg = try #require(try parse(packets).message as? ProfileStatusResponse)
+        #expect(msg.numberOfProfiles == 2)
+        #expect(msg.activeIdpId == 4)
+        #expect(msg.activeSegmentIndex == 1)
+        #expect(msg.presentIdpIds == [4, 7])
+    }
+
+    @Test func currentActiveIdpValuesResponseParses() throws {
+        // [carbRatio(1000-inc), targetBg, insulinDuration(min), isf]
+        let packets = try OracleRunner.encode(
+            txId: 25, messageName: "CurrentActiveIdpValuesResponse", json: "[10000, 110, 300, 30]").packets
+        let msg = try #require(try parse(packets).message as? CurrentActiveIdpValuesResponse)
+        #expect(msg.currentCarbRatio == 10000)
+        #expect(msg.carbRatioGramsPerUnit == 10.0)
+        #expect(msg.currentTargetBg == 110)
+        #expect(msg.currentInsulinDuration == 300)
+        #expect(msg.currentIsf == 30)
+    }
+
+    @Test func globalMaxBolusSettingsResponseParses() throws {
+        let packets = try OracleRunner.encode(
+            txId: 26, messageName: "GlobalMaxBolusSettingsResponse", json: "[25000, 25000]").packets
+        let msg = try #require(try parse(packets).message as? GlobalMaxBolusSettingsResponse)
+        #expect(msg.maxBolus == 25000)
+        #expect(msg.maxBolusUnits == 25.0)
+    }
+
+    @Test func basalLimitSettingsResponseParses() throws {
+        let packets = try OracleRunner.encode(
+            txId: 27, messageName: "BasalLimitSettingsResponse", json: "[15000, 15000]").packets
+        let msg = try #require(try parse(packets).message as? BasalLimitSettingsResponse)
+        #expect(msg.basalLimit == 15000)
+        #expect(msg.basalLimitUnitsPerHour == 15.0)
+    }
+
     @Test func currentBatteryV1ResponseParses() throws {
         let packets = try OracleRunner.encode(
             txId: 13, messageName: "CurrentBatteryV1Response", json: "[50, 78]").packets

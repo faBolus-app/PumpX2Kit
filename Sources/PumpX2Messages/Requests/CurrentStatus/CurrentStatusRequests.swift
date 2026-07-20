@@ -124,3 +124,25 @@ public struct MalfunctionStatusRequest: EmptyCurrentStatusRequest {
     public var cargo: [UInt8] = []
     public init(emptyCargo: Void = ()) { self.cargo = [] }
 }
+
+// A1 read batch: profile overview + safety limits (all empty-cargo CURRENT_STATUS reads).
+public struct ProfileStatusRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(62)               // response 63
+    public var cargo: [UInt8] = []
+    public init(emptyCargo: Void = ()) { self.cargo = [] }
+}
+public struct CurrentActiveIdpValuesRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(0x96)             // -106; response 0x97 (151)
+    public var cargo: [UInt8] = []
+    public init(emptyCargo: Void = ()) { self.cargo = [] }
+}
+public struct GlobalMaxBolusSettingsRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(0x8C)             // -116; response 0x8D (141)
+    public var cargo: [UInt8] = []
+    public init(emptyCargo: Void = ()) { self.cargo = [] }
+}
+public struct BasalLimitSettingsRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(0x8A)             // -118; response 0x8B (139)
+    public var cargo: [UInt8] = []
+    public init(emptyCargo: Void = ()) { self.cargo = [] }
+}
