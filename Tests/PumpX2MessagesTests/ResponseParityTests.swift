@@ -192,6 +192,47 @@ import Testing
         #expect(msg.profileISF == 30)
     }
 
+    @Test func extendedBolusStatusV2ResponseParses() throws {
+        // [bolusStatus, bolusId, timestamp, requestedVolume, duration, bolusSource, secsSinceReset]
+        let packets = try OracleRunner.encode(
+            txId: 31, messageName: "ExtendedBolusStatusV2Response",
+            json: "[1, 10650, 461510714, 2000, 3600, 8, 461500000]").packets
+        let msg = try #require(try parse(packets).message as? ExtendedBolusStatusV2Response)
+        #expect(msg.bolusId == 10650)
+        #expect(msg.requestedVolume == 2000)
+        #expect(msg.requestedUnits == 2.0)
+        #expect(msg.duration == 3600)
+    }
+
+    @Test func cgmStatusResponseParses() throws {
+        // [sessionStateId, lastCalibrationTimestamp, sensorStartedTimestamp, transmitterBatteryStatusId]
+        let packets = try OracleRunner.encode(
+            txId: 32, messageName: "CGMStatusResponse", json: "[1, 461500000, 461400000, 2]").packets
+        let msg = try #require(try parse(packets).message as? CGMStatusResponse)
+        #expect(msg.sessionStateId == 1)
+        #expect(msg.sessionActive)
+        #expect(msg.transmitterBatteryStatusId == 2)
+    }
+
+    @Test func cgmStatusV2ResponseParses() throws {
+        // [sessionState, lastCal, sensorStarted, batteryStatus, duration, timeRemaining, sensorType, gracePeriod]
+        let packets = try OracleRunner.encode(
+            txId: 33, messageName: "CgmStatusV2Response",
+            json: "[1, 461500000, 461400000, 2, 864000, 432000, 1, true]").packets
+        let msg = try #require(try parse(packets).message as? CgmStatusV2Response)
+        #expect(msg.sessionActive)
+        #expect(msg.sessionDurationSeconds == 864000)
+        #expect(msg.cgmSensorTypeId == 1)
+        #expect(msg.gracePeriod)
+    }
+
+    @Test func cgmHardwareInfoResponseParses() throws {
+        let packets = try OracleRunner.encode(
+            txId: 34, messageName: "CGMHardwareInfoResponse", json: "[\"G6ABC123\", 0]").packets
+        let msg = try #require(try parse(packets).message as? CGMHardwareInfoResponse)
+        #expect(msg.hardwareInfoString == "G6ABC123")
+    }
+
     @Test func controlIQInfoV1ResponseParses() throws {
         // [closedLoop, weight, weightUnit, TDI, userMode, b6, b7, b8, controlState]
         let packets = try OracleRunner.encode(

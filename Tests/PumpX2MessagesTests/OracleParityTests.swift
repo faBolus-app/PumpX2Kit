@@ -59,6 +59,10 @@ struct OracleParityTests {
         ("ControlIQInfoV1Request", ControlIQInfoV1Request()),
         ("PumpFeaturesV1Request", PumpFeaturesV1Request()),
         ("LoadStatusRequest", LoadStatusRequest()),
+        ("ExtendedBolusStatusV2Request", ExtendedBolusStatusV2Request()),
+        ("CGMStatusRequest", CGMStatusRequest()),
+        ("CgmStatusV2Request", CgmStatusV2Request()),
+        ("CGMHardwareInfoRequest", CGMHardwareInfoRequest()),
     ]
 
     @Test(arguments: statusReads)

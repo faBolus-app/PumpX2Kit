@@ -161,3 +161,23 @@ public struct LoadStatusRequest: EmptyCurrentStatusRequest {
     public var cargo: [UInt8] = []
     public init(emptyCargo: Void = ()) { self.cargo = [] }
 }
+public struct ExtendedBolusStatusV2Request: EmptyCurrentStatusRequest {
+    public static let props = statusProps(0xB6)             // -74; response 0xB7 (183)
+    public var cargo: [UInt8] = []
+    public init(emptyCargo: Void = ()) { self.cargo = [] }
+}
+public struct CGMStatusRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(80)               // response 81
+    public var cargo: [UInt8] = []
+    public init(emptyCargo: Void = ()) { self.cargo = [] }
+}
+public struct CgmStatusV2Request: EmptyCurrentStatusRequest {
+    public static let props = statusProps(0xBE)             // -66; response 0xBF (191)
+    public var cargo: [UInt8] = []
+    public init(emptyCargo: Void = ()) { self.cargo = [] }
+}
+public struct CGMHardwareInfoRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(96)               // response 97
+    public var cargo: [UInt8] = []
+    public init(emptyCargo: Void = ()) { self.cargo = [] }
+}

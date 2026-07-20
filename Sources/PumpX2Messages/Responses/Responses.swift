@@ -253,6 +253,108 @@ public struct PumpGlobalsResponse: ResponseMessage {
     public var quickBolusEnabled: Bool { quickBolusEnabledRaw == 1 }
 }
 
+/// Extended (dual/square-wave) bolus status. `response/currentStatus/ExtendedBolusStatusV2Response`
+/// (op 183, 22B). bolusStatus@0, bolusId short@1, timestamp uint32@5, requestedVolume uint32@9
+/// (mU), duration uint32@13, bolusSource@17, secondsSincePumpReset uint32@18.
+public struct ExtendedBolusStatusV2Response: ResponseMessage {
+    public static let props = MessageProps(opCode: 183, size: 22, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var bolusStatus = 0
+    public private(set) var bolusId = 0
+    public private(set) var timestamp = 0
+    public private(set) var requestedVolume = 0
+    public private(set) var duration = 0
+    public private(set) var bolusSource = 0
+    public private(set) var secondsSincePumpReset = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 22 else { return }
+        bolusStatus = Int(raw[0])
+        bolusId = Bytes.readShort(raw, 1)
+        timestamp = Int(Bytes.readUint32(raw, 5))
+        requestedVolume = Int(Bytes.readUint32(raw, 9))
+        duration = Int(Bytes.readUint32(raw, 13))
+        bolusSource = Int(raw[17])
+        secondsSincePumpReset = Int(Bytes.readUint32(raw, 18))
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = ExtendedBolusStatusV2Response(cargo: raw) }
+    public var requestedUnits: Double { Double(requestedVolume) / 1000.0 }
+}
+
+/// CGM session status. `response/currentStatus/CGMStatusResponse` (op 81, 10B). sessionStateId@0,
+/// lastCalibrationTimestamp uint32@1, sensorStartedTimestamp uint32@5, transmitterBatteryStatusId@9.
+public struct CGMStatusResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 81, size: 10, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var sessionStateId = 0
+    public private(set) var lastCalibrationTimestamp = 0
+    public private(set) var sensorStartedTimestamp = 0
+    public private(set) var transmitterBatteryStatusId = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 10 else { return }
+        sessionStateId = Int(raw[0])
+        lastCalibrationTimestamp = Int(Bytes.readUint32(raw, 1))
+        sensorStartedTimestamp = Int(Bytes.readUint32(raw, 5))
+        transmitterBatteryStatusId = Int(raw[9])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = CGMStatusResponse(cargo: raw) }
+    /// sessionStateId 1 = active (per upstream SessionState).
+    public var sessionActive: Bool { sessionStateId == 1 }
+}
+
+/// CGM session status, v2 (adds session duration/remaining, sensor type, grace period).
+/// `response/currentStatus/CgmStatusV2Response` (op 191, 20B). sessionStateId@0,
+/// lastCalibrationTimestamp uint32@1, sensorStartedTimestamp uint32@5, transmitterBatteryStatusId@9,
+/// sessionDurationSeconds uint32@10, sessionTimeRemainingSeconds uint32@14, cgmSensorTypeId@18,
+/// gracePeriod@19.
+public struct CgmStatusV2Response: ResponseMessage {
+    public static let props = MessageProps(opCode: 191, size: 20, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var sessionStateId = 0
+    public private(set) var lastCalibrationTimestamp = 0
+    public private(set) var sensorStartedTimestamp = 0
+    public private(set) var transmitterBatteryStatusId = 0
+    public private(set) var sessionDurationSeconds = 0
+    public private(set) var sessionTimeRemainingSeconds = 0
+    public private(set) var cgmSensorTypeId = 0
+    public private(set) var gracePeriod = false
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 20 else { return }
+        sessionStateId = Int(raw[0])
+        lastCalibrationTimestamp = Int(Bytes.readUint32(raw, 1))
+        sensorStartedTimestamp = Int(Bytes.readUint32(raw, 5))
+        transmitterBatteryStatusId = Int(raw[9])
+        sessionDurationSeconds = Int(Bytes.readUint32(raw, 10))
+        sessionTimeRemainingSeconds = Int(Bytes.readUint32(raw, 14))
+        cgmSensorTypeId = Int(raw[18])
+        gracePeriod = (raw[19] & 0xFF) != 0
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = CgmStatusV2Response(cargo: raw) }
+    public var sessionActive: Bool { sessionStateId == 1 }
+}
+
+/// CGM transmitter/sensor hardware identifier string. `response/currentStatus/CGMHardwareInfoResponse`
+/// (op 97, 17B). hardwareInfoString = 16-byte string@0, lastByte@16.
+public struct CGMHardwareInfoResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 97, size: 17, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var hardwareInfoString = ""
+    public private(set) var lastByte = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 17 else { return }
+        hardwareInfoString = Bytes.readString(raw, 0, 16)
+        lastByte = Int(raw[16])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = CGMHardwareInfoResponse(cargo: raw) }
+}
+
 /// Settings for one insulin-delivery profile. `response/currentStatus/IDPSettingsResponse`
 /// (op 65, 23B). idpId@0, name=16-byte string@1, numberOfProfileSegments@17,
 /// insulinDuration short@18 (min), maxBolus short@20 (mU), carbEntry@22.
