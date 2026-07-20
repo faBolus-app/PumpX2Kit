@@ -2,7 +2,7 @@
 
 A Swift port of the reverse-engineered [`jwoglom/pumpx2`](https://github.com/jwoglom/pumpx2)
 protocol for the Tandem **t:slim X2 / Mobi** insulin pump. It provides the shared
-protocol / auth / BLE core that the [`ControlX2iOS`](../ControlX2iOS) app and its watch /
+protocol / auth / BLE core that the [`faBolus`](../faBolus) app and its watch /
 Garmin remotes build on.
 
 > [!WARNING]
@@ -59,9 +59,9 @@ bench log). Every outgoing message is byte-exact against the `cliparser` oracle 
 
 ## The app built on this
 
-[`ControlX2iOS`](https://github.com/zgranowitz/ControlX2iOS) is the iPhone / Apple Watch app that
+[`faBolus`](https://github.com/zgranowitz/faBolus) is the iPhone / Apple Watch app that
 consumes PumpX2Kit (the Garmin remote lives in
-[`PumpX2Garmin`](https://github.com/zgranowitz/PumpX2Garmin)). Its documentation — a
+[`faBolusGarmin`](https://github.com/zgranowitz/faBolusGarmin)). Its documentation — a
 no-experience-required build guide, usage, and customization — is the best starting point:
 
-### 👉 https://zgranowitz.github.io/ControlX2iOS/
+### 👉 https://zgranowitz.github.io/faBolus/
