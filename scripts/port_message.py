@@ -39,6 +39,29 @@ def unsigned_opcode(literal):
     return v
 
 
+def parse_history_props(text):
+    """Parse a @HistoryLogProps annotation. opCode() is the record typeId; size defaults to 26."""
+    m = re.search(r"@HistoryLogProps\s*\((.*?)\)", text, re.DOTALL)
+    if not m:
+        return None
+    body = m.group(1)
+
+    def field(name, default=None):
+        mm = re.search(name + r"\s*=\s*([^,\)\s]+)", body)
+        return mm.group(1).strip() if mm else default
+
+    op = field("opCode")
+    sz = field("size", "26")
+    sm = re.match(r"(\d+)", sz)
+    dn = re.search(r'displayName\s*=\s*"([^"]*)"', body)
+    return {
+        "kind": "history",
+        "typeId": int(op) if op is not None else None,
+        "size": sm.group(1) if sm else "26",
+        "displayName": dn.group(1) if dn else "",
+    }
+
+
 def parse_props(text):
     m = re.search(r"@MessageProps\s*\((.*?)\)", text, re.DOTALL)
     if not m:
@@ -121,7 +144,8 @@ def parse_body_translate(text):
         if not s or s.startswith("//"):
             continue
         if any(k in s for k in ("removeSignedRequestHmacBytes", "Validate", "this.cargo = raw",
-                                 "new MinsTime", "getIdpStatus", "getBgSource", "= getBgSource")):
+                                 "parseBase(raw)", "new MinsTime", "getIdpStatus",
+                                 "getBgSource", "= getBgSource")):
             continue
         am = re.fullmatch(r"this\.(\w+)\s*=\s*(.+);", s)
         if not am:
@@ -184,12 +208,52 @@ def emit(props, cls, assignments, fields, todos):
     return "\n".join(out), reg
 
 
+def emit_history(props, cls, assignments, fields, todos):
+    """Emit a HistoryLogEvent struct. Base fields (pumpTimeSec/sequenceNum) come from parseBase;
+    the event-specific reads start at offset 10 in the 26-byte record."""
+    out = []
+    dn = props["displayName"]
+    out.append(f'/// {dn or cls} — history-log event (typeId {props["typeId"]}). Ported from {cls}.java.')
+    out.append(f"public struct {cls}: HistoryLogEvent {{")
+    out.append(f"    public static let typeId = {props['typeId']}")
+    out.append("    public var cargo: [UInt8]")
+    out.append("    public private(set) var pumpTimeSec: UInt32 = 0")
+    out.append("    public private(set) var sequenceNum: UInt32 = 0")
+    for name, (ftype, default) in fields.items():
+        out.append(f"    public private(set) var {name}: {ftype} = {default}")
+    out.append("    public init() { cargo = [] }")
+    out.append("    public init(cargo raw: [UInt8]) {")
+    out.append("        cargo = raw")
+    out.append(f"        guard raw.count >= {props['size']} else {{ return }}")
+    out.append("        pumpTimeSec = Bytes.readUint32(raw, 2)")
+    out.append("        sequenceNum = Bytes.readUint32(raw, 6)")
+    for a in assignments:
+        out.append(f"        {a}")
+    for t in todos:
+        out.append(f"        // TODO(port): {t}")
+    out.append("    }")
+    out.append("}")
+    reg = f"        add({cls}.self)"
+    return "\n".join(out), reg
+
+
 def process(path):
     text = open(path).read()
     cls = os.path.splitext(os.path.basename(path))[0]
+
+    hist = parse_history_props(text)
+    if hist and hist["typeId"] is not None:
+        assignments, fields, todos = parse_body_translate(text)
+        swift, reg = emit_history(hist, cls, assignments, fields, todos)
+        print(swift + "\n")
+        print(f"// HistoryLogParser registration:\n//{reg}\n")
+        if todos:
+            print(f"// ⚠️  {len(todos)} line(s) need manual review\n", file=sys.stderr)
+        return
+
     props = parse_props(text)
     if not props or props["opCode"] is None:
-        print(f"// SKIP {cls}: no @MessageProps/opCode found", file=sys.stderr)
+        print(f"// SKIP {cls}: no @MessageProps/@HistoryLogProps opCode found", file=sys.stderr)
         return
     assignments, fields, todos = parse_body_translate(text)
     swift, reg = emit(props, cls, assignments, fields, todos)
