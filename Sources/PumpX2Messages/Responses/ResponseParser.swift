@@ -69,7 +69,7 @@ public enum ResponseParser {
 
     /// Signed responses carry a 24-byte HMAC trailer after the cargo (the declared length
     /// includes it). We strip it for field parsing; HMAC verification against the derived key
-    /// is the auth/BLE layer's responsibility (tracked in OPEN_QUESTIONS).
+    /// is the auth/BLE layer's responsibility.
     static let signedOpcodes: Set<UInt8> = [
         BolusPermissionResponse.props.opCode,
         InitiateBolusResponse.props.opCode,
