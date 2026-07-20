@@ -27,6 +27,20 @@ import Testing
         #expect(m.maxBolusAmount == 25000)
     }
 
+    /// TempRateStatusResponse: active/id/duration (offsets mirror upstream parse; oracle has no
+    /// field constructor so this is a direct test). active@0, tempRateId short@1, start u32@4,
+    /// secondsSincePumpReset u32@8, duration u32@12.
+    @Test func tempRateStatusOffsets() {
+        var cargo = [UInt8](repeating: 0, count: 16)
+        cargo[0] = 1  // active
+        let id = Bytes.firstTwoBytesLittleEndian(7); cargo[1] = id[0]; cargo[2] = id[1]
+        let dur = Bytes.toUint32(1800); for i in 0..<4 { cargo[12 + i] = dur[i] }
+        let m = TempRateStatusResponse(cargo: cargo)
+        #expect(m.active)
+        #expect(m.tempRateId == 7)
+        #expect(m.durationSeconds == 1800)
+    }
+
     /// HistoryLogStatusResponse: count + first/last sequence numbers (uint32 LE @0/4/8).
     @Test func historyLogStatusOffsets() {
         var cargo = [UInt8](repeating: 0, count: 12)

@@ -91,6 +91,98 @@ public struct LastBGResponse: ResponseMessage {
     public mutating func parse(_ raw: [UInt8]) { self = LastBGResponse(cargo: raw) }
 }
 
+/// Pump firmware/hardware version + identifiers. `response/currentStatus/PumpVersionResponse`
+/// (op 85, 48B).
+public struct PumpVersionResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 85, size: 48, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var armSwVer: UInt32 = 0
+    public private(set) var mspSwVer: UInt32 = 0
+    public private(set) var serialNum: UInt32 = 0
+    public private(set) var partNum: UInt32 = 0
+    public private(set) var pumpRev = ""
+    public private(set) var modelNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        if raw.count >= 48 {
+            armSwVer = Bytes.readUint32(raw, 0)
+            mspSwVer = Bytes.readUint32(raw, 4)
+            serialNum = Bytes.readUint32(raw, 16)
+            partNum = Bytes.readUint32(raw, 20)
+            pumpRev = Bytes.readString(raw, 24, 8)
+            modelNum = Bytes.readUint32(raw, 44)
+        }
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = PumpVersionResponse(cargo: raw) }
+}
+
+/// What the pump home screen is showing (icon ids + CGM display flags).
+/// `response/currentStatus/HomeScreenMirrorResponse` (op 57, 9B).
+public struct HomeScreenMirrorResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 57, size: 9, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var cgmTrendIconId = 0
+    public private(set) var cgmAlertIconId = 0
+    public private(set) var bolusStatusIconId = 0
+    public private(set) var basalStatusIconId = 0
+    public private(set) var apControlStateIconId = 0
+    public private(set) var remainingInsulinPlusIcon = false
+    public private(set) var cgmDisplayData = false
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        if raw.count >= 9 {
+            cgmTrendIconId = Int(raw[0])
+            cgmAlertIconId = Int(raw[1])
+            bolusStatusIconId = Int(raw[4])
+            basalStatusIconId = Int(raw[5])
+            apControlStateIconId = Int(raw[6])
+            remainingInsulinPlusIcon = raw[7] != 0
+            cgmDisplayData = raw[8] != 0
+        }
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = HomeScreenMirrorResponse(cargo: raw) }
+}
+
+/// Temp-basal-rate status. `response/currentStatus/TempRateStatusResponse` (op 31, 16B).
+public struct TempRateStatusResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 31, size: 16, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var active = false
+    public private(set) var tempRateId = 0
+    public private(set) var startTimeRaw: UInt32 = 0
+    public private(set) var secondsSincePumpReset: UInt32 = 0
+    public private(set) var durationSeconds: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        if raw.count >= 16 {
+            active = raw[0] != 0
+            tempRateId = Bytes.readShort(raw, 1)
+            startTimeRaw = Bytes.readUint32(raw, 4)
+            secondsSincePumpReset = Bytes.readUint32(raw, 8)
+            durationSeconds = Bytes.readUint32(raw, 12)
+        }
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = TempRateStatusResponse(cargo: raw) }
+}
+
+/// Battery read for older (non-V2) pumps. `response/currentStatus/CurrentBatteryV1Response` (op 53, 2B).
+public struct CurrentBatteryV1Response: ResponseMessage {
+    public static let props = MessageProps(opCode: 53, size: 2, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var currentBatteryAbc = 0
+    public private(set) var currentBatteryIbc = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        if raw.count >= 2 { currentBatteryAbc = Int(raw[0]); currentBatteryIbc = Int(raw[1]) }
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = CurrentBatteryV1Response(cargo: raw) }
+    public var batteryPercent: Int { currentBatteryIbc }
+}
+
 /// IOB read (Control-IQ). `response/currentStatus/ControlIQIOBResponse` (opcode 109, 17 bytes).
 public struct ControlIQIOBResponse: ResponseMessage {
     public static let props = MessageProps(opCode: 109, size: 17, type: .response, characteristic: .currentStatus)

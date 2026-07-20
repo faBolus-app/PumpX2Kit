@@ -54,6 +54,39 @@ import Testing
         #expect(msg.bgSourceId == 0)
     }
 
+    @Test func pumpVersionResponseParses() throws {
+        // [armSwVer, mspSwVer, configA, configB, serialNum, partNum, pumpRev, pcbaSN, pcbaRev, modelNum]
+        let packets = try OracleRunner.encode(
+            txId: 11, messageName: "PumpVersionResponse",
+            json: "[1, 2, 0, 0, 123456, 7890, \"abc\", 111, \"def\", 1001]").packets
+        let msg = try #require(try ResponseParser.parse(frame: frame(packets)).message as? PumpVersionResponse)
+        #expect(msg.serialNum == 123456)
+        #expect(msg.partNum == 7890)
+        #expect(msg.pumpRev == "abc")
+        #expect(msg.modelNum == 1001)
+    }
+
+    @Test func homeScreenMirrorResponseParses() throws {
+        // [cgmTrend, cgmAlert, statusIcon0, statusIcon1, bolusStatus, basalStatus, apControlState, remInsulinPlus, cgmDisplay]
+        let packets = try OracleRunner.encode(
+            txId: 12, messageName: "HomeScreenMirrorResponse", json: "[1, 2, 3, 4, 5, 6, 7, true, false]").packets
+        let msg = try #require(try ResponseParser.parse(frame: frame(packets)).message as? HomeScreenMirrorResponse)
+        #expect(msg.cgmTrendIconId == 1)
+        #expect(msg.cgmAlertIconId == 2)
+        #expect(msg.bolusStatusIconId == 5)
+        #expect(msg.apControlStateIconId == 7)
+        #expect(msg.remainingInsulinPlusIcon)
+        #expect(!msg.cgmDisplayData)
+    }
+
+    @Test func currentBatteryV1ResponseParses() throws {
+        let packets = try OracleRunner.encode(
+            txId: 13, messageName: "CurrentBatteryV1Response", json: "[50, 78]").packets
+        let msg = try #require(try ResponseParser.parse(frame: frame(packets)).message as? CurrentBatteryV1Response)
+        #expect(msg.currentBatteryAbc == 50)
+        #expect(msg.batteryPercent == 78)
+    }
+
     @Test func controlIQIOBResponseParses() throws {
         let packets = try OracleRunner.encode(
             txId: 1, messageName: "ControlIQIOBResponse", json: "[240, 17940, 240, 240, 0]").packets
