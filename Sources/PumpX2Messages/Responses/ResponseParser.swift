@@ -54,6 +54,8 @@ public enum ResponseParser {
         add(ControlIQInfoV2Response.self)
         add(LastBGResponse.self)
         add(PumpVersionResponse.self)
+        add(PumpSettingsResponse.self)
+        add(PumpGlobalsResponse.self)
         add(HomeScreenMirrorResponse.self)
         add(TempRateStatusResponse.self)
         add(CurrentBatteryV1Response.self)
@@ -83,6 +85,8 @@ public enum ResponseParser {
         add(ResumePumpingResponse.self)
         add(SetTempRateResponse.self)
         add(StopTempRateResponse.self)
+        add(CancelBolusResponse.self)
+        add(BolusPermissionReleaseResponse.self)
         return r
     }()
 

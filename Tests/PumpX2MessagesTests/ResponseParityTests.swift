@@ -81,6 +81,52 @@ import Testing
         #expect(!msg.cgmDisplayData)
     }
 
+    @Test func pumpSettingsResponseParses() throws {
+        // [lowInsulinThreshold, cannulaPrimeSize, autoShutdownEnabled, autoShutdownDuration,
+        //  featureLock, oledTimeout, status]
+        let packets = try OracleRunner.encode(
+            txId: 19, messageName: "PumpSettingsResponse", json: "[20, 30, 1, 720, 0, 30, 0]").packets
+        let msg = try #require(try parse(packets).message as? PumpSettingsResponse)
+        #expect(msg.lowInsulinThreshold == 20)
+        #expect(msg.cannulaPrimeSize == 30)
+        #expect(msg.autoShutdownEnabled == 1)
+        #expect(msg.autoShutdownDuration == 720)
+        #expect(msg.oledTimeout == 30)
+    }
+
+    @Test func pumpGlobalsResponseParses() throws {
+        // [quickBolusEnabled, incUnits, incCarbs, entryType, status, buttonAnnun, quickBolusAnnun,
+        //  bolusAnnun, reminderAnnun, alertAnnun, alarmAnnun, fillTubingAnnun]
+        let packets = try OracleRunner.encode(
+            txId: 20, messageName: "PumpGlobalsResponse", json: "[1, 1000, 0, 0, 0, 0, 1, 2, 3, 0, 1, 2]").packets
+        let msg = try #require(try parse(packets).message as? PumpGlobalsResponse)
+        #expect(msg.quickBolusEnabled)
+        #expect(msg.quickBolusIncrementUnits == 1000)
+        #expect(msg.quickBolusAnnun == 1)
+        #expect(msg.bolusAnnun == 2)
+        #expect(msg.fillTubingAnnun == 2)
+    }
+
+    @Test func cancelBolusResponseParses() throws {
+        let packets = try OracleRunner.encode(
+            txId: 21, messageName: "CancelBolusResponse", json: "[0, 10650, 0]").packets
+        let msg = try #require(try parse(packets, on: .control).message as? CancelBolusResponse)
+        #expect(msg.bolusId == 10650)
+        #expect(msg.wasCancelled)
+        // A non-zero reason marks a failed cancel (e.g. already delivered).
+        let failed = try OracleRunner.encode(
+            txId: 22, messageName: "CancelBolusResponse", json: "[1, 10650, 2]").packets
+        let fm = try #require(try parse(failed, on: .control).message as? CancelBolusResponse)
+        #expect(!fm.wasCancelled)
+    }
+
+    @Test func bolusPermissionReleaseResponseParses() throws {
+        let packets = try OracleRunner.encode(
+            txId: 23, messageName: "BolusPermissionReleaseResponse", json: "[0]").packets
+        let msg = try #require(try parse(packets, on: .control).message as? BolusPermissionReleaseResponse)
+        #expect(msg.released)
+    }
+
     @Test func currentBatteryV1ResponseParses() throws {
         let packets = try OracleRunner.encode(
             txId: 13, messageName: "CurrentBatteryV1Response", json: "[50, 78]").packets

@@ -151,6 +151,108 @@ public struct StopTempRateResponse: ResponseMessage {
     public var accepted: Bool { status == 0 }
 }
 
+/// Ack for a cancel-bolus command (a.k.a. BolusTermination) — signed.
+/// `response/control/CancelBolusResponse` (op 0xA1, 5B). statusId@0, bolusId short@1, reasonId@3.
+public struct CancelBolusResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0xA1, size: 5, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var statusId = 0
+    public private(set) var bolusId = 0
+    public private(set) var reasonId = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        if !raw.isEmpty { statusId = Int(raw[0]) }
+        if raw.count >= 3 { bolusId = Bytes.readShort(raw, 1) }
+        if raw.count >= 4 { reasonId = Int(raw[3]) }
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = CancelBolusResponse(cargo: raw) }
+    /// statusId 0 = SUCCESS, reasonId 0 = NO_ERROR (2 = invalid/already delivered).
+    public var wasCancelled: Bool { statusId == 0 && reasonId == 0 }
+}
+
+/// Ack for releasing a pending bolus permission (signed). Closes out the potential bolus in the
+/// history logs. `response/control/BolusPermissionReleaseResponse` (op 0xF1, 1B). status@0.
+public struct BolusPermissionReleaseResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0xF1, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = BolusPermissionReleaseResponse(cargo: raw) }
+    /// status 0 = SUCCESS.
+    public var released: Bool { status == 0 }
+}
+
+/// Pump-wide settings: low-insulin threshold, cannula prime size, auto-shutdown, feature lock,
+/// OLED timeout. `response/currentStatus/PumpSettingsResponse` (op 83, 9B).
+/// lowInsulinThreshold@0, cannulaPrimeSize@1, autoShutdownEnabled@2, autoShutdownDuration short@3,
+/// featureLock@5, oledTimeout@6, status short@7.
+public struct PumpSettingsResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 83, size: 9, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var lowInsulinThreshold = 0
+    public private(set) var cannulaPrimeSize = 0
+    public private(set) var autoShutdownEnabled = 0
+    public private(set) var autoShutdownDuration = 0
+    public private(set) var featureLock = 0
+    public private(set) var oledTimeout = 0
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 9 else { return }
+        lowInsulinThreshold = Int(raw[0])
+        cannulaPrimeSize = Int(raw[1])
+        autoShutdownEnabled = Int(raw[2])
+        autoShutdownDuration = Bytes.readShort(raw, 3)
+        featureLock = Int(raw[5])
+        oledTimeout = Int(raw[6])
+        status = Bytes.readShort(raw, 7)
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = PumpSettingsResponse(cargo: raw) }
+}
+
+/// Global pump settings: quick-bolus config + per-category annunciation (audio/vibrate) modes.
+/// `response/currentStatus/PumpGlobalsResponse` (op 87, 14B). quickBolusEnabled@0,
+/// quickBolusIncrementUnits short@1, quickBolusIncrementCarbs short@3, quickBolusEntryType@5,
+/// quickBolusStatus@6, then buttonAnnun@7…fillTubingAnnun@13.
+public struct PumpGlobalsResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 87, size: 14, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var quickBolusEnabledRaw = 0
+    public private(set) var quickBolusIncrementUnits = 0
+    public private(set) var quickBolusIncrementCarbs = 0
+    public private(set) var quickBolusEntryType = 0
+    public private(set) var quickBolusStatus = 0
+    public private(set) var buttonAnnun = 0
+    public private(set) var quickBolusAnnun = 0
+    public private(set) var bolusAnnun = 0
+    public private(set) var reminderAnnun = 0
+    public private(set) var alertAnnun = 0
+    public private(set) var alarmAnnun = 0
+    public private(set) var fillTubingAnnun = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 14 else { return }
+        quickBolusEnabledRaw = Int(raw[0])
+        quickBolusIncrementUnits = Bytes.readShort(raw, 1)
+        quickBolusIncrementCarbs = Bytes.readShort(raw, 3)
+        quickBolusEntryType = Int(raw[5])
+        quickBolusStatus = Int(raw[6])
+        buttonAnnun = Int(raw[7])
+        quickBolusAnnun = Int(raw[8])
+        bolusAnnun = Int(raw[9])
+        reminderAnnun = Int(raw[10])
+        alertAnnun = Int(raw[11])
+        alarmAnnun = Int(raw[12])
+        fillTubingAnnun = Int(raw[13])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = PumpGlobalsResponse(cargo: raw) }
+    public var quickBolusEnabled: Bool { quickBolusEnabledRaw == 1 }
+}
+
 /// Pump firmware/hardware version + identifiers. `response/currentStatus/PumpVersionResponse`
 /// (op 85, 48B).
 public struct PumpVersionResponse: ResponseMessage {
