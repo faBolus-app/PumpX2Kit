@@ -2,8 +2,8 @@
 
 PumpX2Kit is a **reusable Swift library** for the Tandem t:slim X2 / Mobi Bluetooth protocol — any
 project can depend on it (faBolus is one consumer). Contributions are welcome by **PR, not fork**:
-the goal is one well-tested library everyone builds on. All work is **bench/experimental only**
-(saline into a container on a scale, never on a body).
+the goal is one well-tested library everyone builds on. All work is for **experimental use only**
+(in development, not FDA-cleared).
 
 ## The one hard rule: byte-exact vs the oracle
 Every outgoing (request) message and every parsed response must **byte-match** the upstream
@@ -37,4 +37,4 @@ Every outgoing (request) message and every parsed response must **byte-match** t
 - Confirm the three library products still build for iOS **and** watchOS
   (`xcodebuild -scheme PumpX2Auth -destination 'generic/platform=watchOS' CODE_SIGNING_ALLOWED=NO build`,
   likewise `PumpX2BLE`, `PumpX2Messages`).
-- Note anything only compiled vs. bench-tested on hardware.
+- Note anything only compiled vs. tested on hardware.

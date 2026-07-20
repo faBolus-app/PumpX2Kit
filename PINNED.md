@@ -2,7 +2,7 @@
 
 The Swift port tracks a specific, known-good commit of the upstream protocol library. This
 is deliberate: for an insulin-delivery path, upstream changes must be reviewed and
-bench-revalidated before adoption (see the upstream-sync workflow in the plan / README).
+re-validated before adoption (see the upstream-sync workflow in the plan / README).
 
 | What | Value |
 | --- | --- |
@@ -13,13 +13,13 @@ bench-revalidated before adoption (see the upstream-sync workflow in the plan / 
 
 ## Pump firmware
 
-Recorded from the bench pump's Pump Info screen (2026-07-18). The protocol can break on a
+Recorded from the pump's Pump Info screen (2026-07-18). The protocol can break on a
 future firmware update; this port is pinned to this firmware and treated as disposable against
 vendor changes.
 
 | Field | Value |
 | --- | --- |
-| Bench pump model | Tandem **t:slim X2** |
+| Pump model | Tandem **t:slim X2** |
 | t:slim Software | **Control-IQ+ 7.10.2** |
 | ARM S/W Version | `da8923cc9d010d07` |
 | MSP S/W Version | `da8923cc9d010d07` |
@@ -29,7 +29,7 @@ vendor changes.
 **Implication:** pairing uses the modern EC-JPAKE handshake (`PumpX2Auth.JpakeAuth`, mbedTLS
 secp256r1/SHA-256). The legacy 16-char path is retained only for older pumps.
 
-## Bench validation log
+## Validation log
 
 - **2026-07-18 — read-only monitor PASSED on hardware.** `swift run PumpX2BenchHarness monitor`
   against this pump: BLE scan → connect → discover, **6-digit JPAKE pairing succeeded**
@@ -44,12 +44,12 @@ secp256r1/SHA-256). The legacy 16-char path is retained only for older pumps.
   screens. Signing timestamp = `TimeSinceResetResponse.currentTime`.
 - **2026-07-18 — SIGNED WRITE validated on hardware (permission test):** a signed
   BolusPermissionRequest was ACCEPTED (granted=true) and released — no insulin delivered.
-- **2026-07-18 — 🎯 MILESTONE 1 DoD MET: saline bolus delivered.** `bolus 100` delivered
-  **0.10 u** of saline: permission → signed InitiateBolus (FOOD2) accepted → LastBolusStatus
+- **2026-07-18 — 🎯 MILESTONE 1 DoD MET: signed bolus delivered.** `bolus 100` delivered
+  **0.10 u**: permission → signed InitiateBolus (FOOD2) accepted → LastBolusStatus
   reported 0.10 u (id 1774); the **pump screen agreed**. Signed CancelBolus round-trips.
   Full delivery path (BLE + JPAKE + signed permission + signed initiate + status + cancel) is
   proven on the real pump, with every outgoing message byte-exact vs the cliparser oracle.
-- **Pending niceties:** gravimetric mass check at a larger, weighable dose; cancel *mid*-
+- **Pending niceties:** mass/accuracy check at a larger dose; cancel *mid*-
   delivery (extended/large bolus) for partial-delivery reporting.
 
 ## Toolchain notes

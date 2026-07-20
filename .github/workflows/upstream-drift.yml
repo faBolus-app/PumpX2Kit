@@ -2,7 +2,7 @@ name: Upstream drift alarm
 
 # Detects when jwoglom/pumpx2 changes protocol-relevant files vs. our pinned submodule
 # commit. Never auto-merges — for a dosing path, every upstream change is reviewed and
-# bench-revalidated by hand (see README "Staying synced with upstream").
+# re-validated by hand (see README "Staying synced with upstream").
 
 on:
   schedule:
@@ -60,7 +60,7 @@ jobs:
               '```', files, '```',
               ``,
               `**Do not auto-merge.** Review the diff, hand-port the delta, get the oracle suite`,
-              `green, re-run bench validation, then bump the submodule + cut a new version.`,
+              `green, re-run validation, then bump the submodule + cut a new version.`,
             ].join('\n');
             await github.rest.issues.create({
               owner: context.repo.owner, repo: context.repo.repo,

@@ -22,7 +22,7 @@ public protocol PumpBLEClientDelegate: AnyObject {
 /// notifications → write packetized requests / reassemble notified responses.
 ///
 /// NOT yet hardware-tested — no pump/phone hardware available. Structure follows the
-/// reference; behavior must be bench-validated before it drives a pump.
+/// reference; behavior must be validated on hardware before it drives a pump.
 @MainActor
 public final class PumpBLEClient: NSObject {
     public enum State: Equatable, Sendable {
@@ -48,7 +48,7 @@ public final class PumpBLEClient: NSObject {
         /// cancel), but still HARD-BLOCK insulin delivery (`modifiesInsulinDelivery`). Used to
         /// validate signing on hardware without dispensing.
         case allowNonDelivery
-        /// Allow everything, including insulin delivery. BENCH SALINE ONLY.
+        /// Allow everything, including insulin delivery. Experimental.
         case allowDelivery
     }
 

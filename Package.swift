@@ -1,7 +1,7 @@
 // swift-tools-version: 6.0
 // PumpX2Kit — Swift port of the jwoglom/pumpx2 Tandem pump protocol.
-// Independent reimplementation. Bench proof-of-concept only. Not affiliated with
-// Tandem Diabetes Care or the upstream pumpX2 / controlX2 projects.
+// Independent, open-source project in development for experimental use; not FDA-cleared.
+// Not affiliated with, endorsed by, or a product of Tandem Diabetes Care or Dexcom.
 import PackageDescription
 
 let package = Package(
@@ -9,7 +9,7 @@ let package = Package(
     platforms: [
         .iOS(.v16),
         .watchOS(.v9),
-        .macOS(.v13), // for command-line tests + bench harness
+        .macOS(.v13), // for command-line tests + the harness
     ],
     products: [
         .library(name: "PumpX2Messages", targets: ["PumpX2Messages"]),
@@ -54,7 +54,7 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
 
-        // Bench/oracle CLI: connect → status → saline bolus → cancel.
+        // Oracle/test CLI: connect → status → bolus → cancel.
         .executableTarget(
             name: "PumpX2BenchHarness",
             dependencies: ["PumpX2Messages", "PumpX2Auth", "PumpX2BLE"]

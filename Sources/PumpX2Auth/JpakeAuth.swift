@@ -50,7 +50,7 @@ public final class EcJpakeContext {
 /// key is `HKDF(serverNonce, derivedSecret)` — the same key `Packetize` uses to HMAC signed
 /// (insulin-affecting) commands. Validated in-process (client↔server derive equal secrets);
 /// interop with the pump's implementation is validated via the oracle `jpake-server` handshake
-/// and, ultimately, on the bench.
+/// and, ultimately, on hardware.
 public final class JpakeAuth {
     public enum JpakeAuthError: Error { case keyConfirmationFailed }
 

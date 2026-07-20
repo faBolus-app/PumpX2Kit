@@ -6,7 +6,7 @@ import PumpX2Messages
     /// End-to-end in-process EC-JPAKE handshake: a client and server sharing the same 6-digit
     /// code must derive an identical pre-master secret. Proves the mbedTLS integration + shim
     /// + RNG work. (Interop with the pump's implementation is validated via the oracle
-    /// jpake-server handshake / bench.)
+    /// jpake-server handshake / test.)
     @Test func inProcessHandshakeDerivesEqualSecret() throws {
         let secret = JpakeAuth.pairingCodeToBytes("123456")
         let client = try EcJpakeContext(role: .client, secret: secret)

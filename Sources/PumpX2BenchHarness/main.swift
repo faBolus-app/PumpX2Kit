@@ -4,10 +4,10 @@ import PumpX2Messages
 import PumpX2Auth
 import PumpX2BLE
 
-// PumpX2BenchHarness — the bench/oracle CLI (Milestone 1e).
+// PumpX2BenchHarness — the oracle/test CLI (Milestone 1e).
 //
-// SAFETY: bench proof-of-concept only. Every run must target a dedicated test pump
-// dispensing saline into a container on a scale — NEVER on a body.
+// SAFETY: experimental software in development; not FDA-cleared. Use at your own
+// responsibility.
 //
 // Modes:
 //   (no args)   serialization self-check (no BLE) — always works
@@ -17,7 +17,7 @@ import PumpX2BLE
 //               first hardware test. Set PUMP_PAIRING_CODE=<6 digits>.
 //
 // A bolus/delivery mode is intentionally NOT provided here yet — deliver via the app once the
-// read-only monitor is validated on the bench.
+// read-only monitor is validated on hardware.
 
 let args = Array(CommandLine.arguments.dropFirst())
 
@@ -65,7 +65,7 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
         super.init()
         switch mode {
         case .permissionTest: client.writePolicy = .allowNonDelivery
-        case .deliverBolus, .carbBolus: client.writePolicy = .allowDelivery   // BENCH SALINE ONLY
+        case .deliverBolus, .carbBolus: client.writePolicy = .allowDelivery   // experimental delivery
         default: client.writePolicy = .readOnly
         }
         client.delegate = self

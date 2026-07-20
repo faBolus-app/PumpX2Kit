@@ -4,7 +4,7 @@ import PumpX2Messages
 
 @Suite struct WritePolicyInterlockTests {
     /// Default policy is read-only: CONTROL / signed / insulin-affecting messages are refused
-    /// before anything is written — first bench sessions physically cannot command a bolus.
+    /// before anything is written — first sessions physically cannot command a bolus.
     @MainActor @Test func readOnlyBlocksAllWrites() {
         let client = PumpBLEClient()
         #expect(client.writePolicy == .readOnly)   // safe by default

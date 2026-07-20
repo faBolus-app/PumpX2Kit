@@ -6,12 +6,10 @@ protocol / auth / BLE core that the [`faBolus`](../faBolus) app and its watch /
 Garmin remotes build on.
 
 > [!WARNING]
-> **This is an independent, unofficial reimplementation and a bench proof-of-concept.**
-> It is **not** affiliated with, endorsed by, or a fork of Tandem Diabetes Care, the
-> `pumpX2` project, or the `controlX2` project. The insulin-dosing path here is our own
-> reimplementation and is treated as **unproven**. All testing is done on a **dedicated
-> test pump dispensing saline into a container on a scale — never on a body.** On-body
-> use is explicitly out of scope.
+> **Experimental — in development.** PumpX2Kit is an independent, open-source project in
+> development for experimental use. It is **not FDA-cleared**, and the insulin-dosing path is
+> treated as unproven; if you build or use it, you assume all responsibility. **Not affiliated
+> with, endorsed by, or a product of Tandem Diabetes Care or Dexcom.**
 
 ## Modules
 
@@ -74,9 +72,9 @@ swift test
 
 ## Status
 
-**Milestone 1 bench definition-of-done met** — read-only monitor, 6-digit JPAKE pairing, and a
-signed saline bolus have been validated on real hardware (see [`PINNED.md`](PINNED.md) for the
-bench log). Every outgoing message is byte-exact against the `cliparser` oracle in CI.
+**Milestone 1 definition-of-done met** — read-only monitor, 6-digit JPAKE pairing, and a
+signed bolus have been validated on real hardware (see [`PINNED.md`](PINNED.md) for the
+log). Every outgoing message is byte-exact against the `cliparser` oracle in CI.
 
 ## The app built on this
 
