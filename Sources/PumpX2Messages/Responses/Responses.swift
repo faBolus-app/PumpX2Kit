@@ -28,6 +28,69 @@ public struct ApiVersionResponse: ResponseMessage {
     public var isMobi: Bool { majorVersion > 3 || (majorVersion == 3 && minorVersion >= 5) }
 }
 
+/// IOB read for non-Control-IQ pumps. `response/currentStatus/NonControlIQIOBResponse` (op 39, 12B).
+public struct NonControlIQIOBResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 39, size: 12, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var iob: UInt32 = 0                 // milliunits
+    public private(set) var timeRemainingSeconds: UInt32 = 0
+    public private(set) var totalIOB: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        if raw.count >= 12 {
+            iob = Bytes.readUint32(raw, 0)
+            timeRemainingSeconds = Bytes.readUint32(raw, 4)
+            totalIOB = Bytes.readUint32(raw, 8)
+        }
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = NonControlIQIOBResponse(cargo: raw) }
+    public var iobUnits: Double { Double(iob) / 1000.0 }
+}
+
+/// Control-IQ info (closed-loop state, current user mode). `response/currentStatus/ControlIQInfoV2Response`
+/// (op 179, 19B). `currentUserModeType`/`controlStateType` expose Sleep/Exercise + CIQ activity.
+public struct ControlIQInfoV2Response: ResponseMessage {
+    public static let props = MessageProps(opCode: 179, size: 19, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var closedLoopEnabled = false
+    public private(set) var currentUserModeType = 0
+    public private(set) var controlStateType = 0
+    public private(set) var exerciseChoice = 0
+    public private(set) var exerciseTimeRemainingSeconds: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        if raw.count >= 19 {
+            closedLoopEnabled = raw[0] != 0
+            currentUserModeType = Int(raw[5])
+            controlStateType = Int(raw[9])
+            exerciseChoice = Int(raw[10])
+            exerciseTimeRemainingSeconds = Bytes.readUint32(raw, 15)
+        }
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = ControlIQInfoV2Response(cargo: raw) }
+}
+
+/// Last fingerstick blood-glucose entered on the pump. `response/currentStatus/LastBGResponse` (op 51, 7B).
+public struct LastBGResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 51, size: 7, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var bgTimestamp: UInt32 = 0
+    public private(set) var bgValue: Int = 0
+    public private(set) var bgSourceId: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        if raw.count >= 7 {
+            bgTimestamp = Bytes.readUint32(raw, 0)
+            bgValue = Bytes.readShort(raw, 4)
+            bgSourceId = Int(raw[6])
+        }
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = LastBGResponse(cargo: raw) }
+}
+
 /// IOB read (Control-IQ). `response/currentStatus/ControlIQIOBResponse` (opcode 109, 17 bytes).
 public struct ControlIQIOBResponse: ResponseMessage {
     public static let props = MessageProps(opCode: 109, size: 17, type: .response, characteristic: .currentStatus)

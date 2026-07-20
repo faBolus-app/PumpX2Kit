@@ -27,6 +27,33 @@ import Testing
         #expect(!t.isMobi)
     }
 
+    @Test func nonControlIQIOBResponseParses() throws {
+        let packets = try OracleRunner.encode(
+            txId: 8, messageName: "NonControlIQIOBResponse", json: "[240, 17940, 240]").packets
+        let msg = try #require(try ResponseParser.parse(frame: frame(packets)).message as? NonControlIQIOBResponse)
+        #expect(msg.iob == 240)
+        #expect(msg.timeRemainingSeconds == 17940)
+        #expect(msg.iobUnits == 0.240)
+    }
+
+    @Test func controlIQInfoV2ResponseParses() throws {
+        // [closedLoop, weight, weightUnit, TDI, userMode, b6, b7, b8, controlState, exChoice, exDur, exRem]
+        let packets = try OracleRunner.encode(
+            txId: 9, messageName: "ControlIQInfoV2Response", json: "[true, 70, 0, 40, 2, 0, 0, 0, 1, 0, 0, 0]").packets
+        let msg = try #require(try ResponseParser.parse(frame: frame(packets)).message as? ControlIQInfoV2Response)
+        #expect(msg.closedLoopEnabled)
+        #expect(msg.currentUserModeType == 2)
+        #expect(msg.controlStateType == 1)
+    }
+
+    @Test func lastBGResponseParses() throws {
+        let packets = try OracleRunner.encode(
+            txId: 10, messageName: "LastBGResponse", json: "[461589432, 142, 0]").packets
+        let msg = try #require(try ResponseParser.parse(frame: frame(packets)).message as? LastBGResponse)
+        #expect(msg.bgValue == 142)
+        #expect(msg.bgSourceId == 0)
+    }
+
     @Test func controlIQIOBResponseParses() throws {
         let packets = try OracleRunner.encode(
             txId: 1, messageName: "ControlIQIOBResponse", json: "[240, 17940, 240, 240, 0]").packets
