@@ -53,5 +53,15 @@ swift test
 
 ## Status
 
-Milestone 1 in progress — see the implementation plan. Do not proceed to app / watch work
-until the Milestone 1 bench definition-of-done is met.
+**Milestone 1 bench definition-of-done met** — read-only monitor, 6-digit JPAKE pairing, and a
+signed saline bolus have been validated on real hardware (see [`PINNED.md`](PINNED.md) for the
+bench log). Every outgoing message is byte-exact against the `cliparser` oracle in CI.
+
+## The app built on this
+
+[`ControlX2iOS`](https://github.com/zgranowitz/ControlX2iOS) is the iPhone / Apple Watch app that
+consumes PumpX2Kit (the Garmin remote lives in
+[`PumpX2Garmin`](https://github.com/zgranowitz/PumpX2Garmin)). Its documentation — a
+no-experience-required build guide, usage, and customization — is the best starting point:
+
+### 👉 https://zgranowitz.github.io/ControlX2iOS/
