@@ -63,6 +63,8 @@ public enum ResponseParser {
         add(ControlIQInfoV1Response.self)
         add(PumpFeaturesV1Response.self)
         add(LoadStatusResponse.self)
+        add(IDPSettingsResponse.self)
+        add(IDPSegmentResponse.self)
         add(HomeScreenMirrorResponse.self)
         add(TempRateStatusResponse.self)
         add(CurrentBatteryV1Response.self)

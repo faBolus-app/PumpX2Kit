@@ -77,6 +77,20 @@ struct OracleParityTests {
         #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
     }
 
+    /// IDPSettingsRequest carries a 1-byte idpId cargo.
+    @Test func idpSettingsRequestMatchesOracle() throws {
+        let oracle = try OracleRunner.encode(txId: 9, messageName: "IDPSettingsRequest", json: "[4]").packets
+        let swift = try swiftPackets(IDPSettingsRequest(idpId: 4), txId: 9)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    /// IDPSegmentRequest carries a 2-byte [idpId, segmentIndex] cargo.
+    @Test func idpSegmentRequestMatchesOracle() throws {
+        let oracle = try OracleRunner.encode(txId: 10, messageName: "IDPSegmentRequest", json: "[4, 2]").packets
+        let swift = try swiftPackets(IDPSegmentRequest(idpId: 4, segmentIndex: 2), txId: 10)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
     // MARK: - Authentication messages
 
     @Test func centralChallengeRequestMatchesOracle() throws {

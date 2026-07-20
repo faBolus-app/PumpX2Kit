@@ -166,6 +166,32 @@ import Testing
         #expect(msg.basalLimitUnitsPerHour == 15.0)
     }
 
+    @Test func idpSettingsResponseParses() throws {
+        // [idpId, name, numberOfProfileSegments, insulinDuration, maxBolus, carbEntry]
+        let packets = try OracleRunner.encode(
+            txId: 29, messageName: "IDPSettingsResponse", json: "[4, \"Default\", 3, 300, 25000, true]").packets
+        let msg = try #require(try parse(packets).message as? IDPSettingsResponse)
+        #expect(msg.idpId == 4)
+        #expect(msg.name == "Default")
+        #expect(msg.numberOfProfileSegments == 3)
+        #expect(msg.insulinDuration == 300)
+        #expect(msg.maxBolusUnits == 25.0)
+        #expect(msg.carbEntry)
+    }
+
+    @Test func idpSegmentResponseParses() throws {
+        // [idpId, segmentIndex, startTime, basalRate, carbRatio, targetBG, isf, statusId]
+        let packets = try OracleRunner.encode(
+            txId: 30, messageName: "IDPSegmentResponse", json: "[4, 0, 0, 850, 10000, 110, 30, 1]").packets
+        let msg = try #require(try parse(packets).message as? IDPSegmentResponse)
+        #expect(msg.idpId == 4)
+        #expect(msg.profileBasalRate == 850)
+        #expect(msg.basalRateUnitsPerHour == 0.85)
+        #expect(msg.carbRatioGramsPerUnit == 10.0)
+        #expect(msg.profileTargetBG == 110)
+        #expect(msg.profileISF == 30)
+    }
+
     @Test func controlIQInfoV1ResponseParses() throws {
         // [closedLoop, weight, weightUnit, TDI, userMode, b6, b7, b8, controlState]
         let packets = try OracleRunner.encode(

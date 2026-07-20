@@ -253,6 +253,66 @@ public struct PumpGlobalsResponse: ResponseMessage {
     public var quickBolusEnabled: Bool { quickBolusEnabledRaw == 1 }
 }
 
+/// Settings for one insulin-delivery profile. `response/currentStatus/IDPSettingsResponse`
+/// (op 65, 23B). idpId@0, name=16-byte string@1, numberOfProfileSegments@17,
+/// insulinDuration short@18 (min), maxBolus short@20 (mU), carbEntry@22.
+public struct IDPSettingsResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 65, size: 23, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var idpId = 0
+    public private(set) var name = ""
+    public private(set) var numberOfProfileSegments = 0
+    public private(set) var insulinDuration = 0             // minutes
+    public private(set) var maxBolus = 0                    // milliunits
+    public private(set) var carbEntry = false
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 23 else { return }
+        idpId = Int(raw[0])
+        name = Bytes.readString(raw, 1, 16)
+        numberOfProfileSegments = Int(raw[17])
+        insulinDuration = Bytes.readShort(raw, 18)
+        maxBolus = Bytes.readShort(raw, 20)
+        carbEntry = raw[22] != 0
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = IDPSettingsResponse(cargo: raw) }
+    public var maxBolusUnits: Double { Double(maxBolus) / 1000.0 }
+}
+
+/// One time-segment of an insulin-delivery profile. `response/currentStatus/IDPSegmentResponse`
+/// (op 67, 15B). idpId@0, segmentIndex@1, profileStartTime short@2 (min-of-day),
+/// profileBasalRate short@4 (mU/hr), profileCarbRatio uint32@6 (1000-inc), profileTargetBG
+/// short@10 (mg/dL), profileISF short@12 (mg/dL/U), idpStatusId@14.
+public struct IDPSegmentResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 67, size: 15, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var idpId = 0
+    public private(set) var segmentIndex = 0
+    public private(set) var profileStartTime = 0            // minutes past midnight
+    public private(set) var profileBasalRate = 0            // milliunits/hr
+    public private(set) var profileCarbRatio = 0            // 1000-increments
+    public private(set) var profileTargetBG = 0             // mg/dL
+    public private(set) var profileISF = 0                  // mg/dL per unit
+    public private(set) var idpStatusId = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 15 else { return }
+        idpId = Int(raw[0])
+        segmentIndex = Int(raw[1])
+        profileStartTime = Bytes.readShort(raw, 2)
+        profileBasalRate = Bytes.readShort(raw, 4)
+        profileCarbRatio = Int(Bytes.readUint32(raw, 6))
+        profileTargetBG = Bytes.readShort(raw, 10)
+        profileISF = Bytes.readShort(raw, 12)
+        idpStatusId = Int(raw[14])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = IDPSegmentResponse(cargo: raw) }
+    public var basalRateUnitsPerHour: Double { Double(profileBasalRate) / 1000.0 }
+    public var carbRatioGramsPerUnit: Double { Double(profileCarbRatio) / 1000.0 }
+}
+
 /// Control-IQ info, v1 firmware. `response/currentStatus/ControlIQInfoV1Response` (op 105, 10B).
 /// closedLoop@0, weight short@1, weightUnit@3, totalDailyInsulin@4, currentUserModeType@5,
 /// controlStateType@9. (V2 at op 179 carries exercise fields; this is the older layout.)
