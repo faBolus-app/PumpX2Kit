@@ -17,18 +17,70 @@ private func record(typeId: Int, pumpTimeSec: UInt32, seq: UInt32, tail: [UInt8]
 /// decode-only, so matching the upstream decode is the correctness property.
 @Suite(.enabled(if: OracleRunner.isAvailable)) struct HistoryLogOracleParityTests {
     static let cases: [(Int, String)] = [
-        (280, "BolusDeliveryHistoryLog"), (20, "BolusCompletedHistoryLog"),
-        (55, "BolusActivatedHistoryLog"), (59, "BolexActivatedHistoryLog"),
-        (21, "BolexCompletedHistoryLog"), (64, "BolusRequestedMsg1HistoryLog"),
-        (65, "BolusRequestedMsg2HistoryLog"), (66, "BolusRequestedMsg3HistoryLog"),
-        (3, "BasalRateChangeHistoryLog"), (81, "DailyBasalHistoryLog"),
-        (2, "TempRateActivatedHistoryLog"), (15, "TempRateCompletedHistoryLog"),
-        (48, "CarbEnteredHistoryLog"), (16, "BGHistoryLog"),
-        (256, "DexcomG6CGMHistoryLog"), (5, "AlarmActivatedHistoryLog"),
-        (4, "AlertActivatedHistoryLog"), (28, "AlarmClearedHistoryLog"),
-        (12, "PumpingResumedHistoryLog"), (11, "PumpingSuspendedHistoryLog"),
-        (33, "CartridgeFilledHistoryLog"), (61, "CannulaFilledHistoryLog"),
+        (280, "BolusDeliveryHistoryLog"),
+        (20, "BolusCompletedHistoryLog"),
+        (55, "BolusActivatedHistoryLog"),
+        (59, "BolexActivatedHistoryLog"),
+        (21, "BolexCompletedHistoryLog"),
+        (64, "BolusRequestedMsg1HistoryLog"),
+        (65, "BolusRequestedMsg2HistoryLog"),
+        (66, "BolusRequestedMsg3HistoryLog"),
+        (3, "BasalRateChangeHistoryLog"),
+        (81, "DailyBasalHistoryLog"),
+        (2, "TempRateActivatedHistoryLog"),
+        (15, "TempRateCompletedHistoryLog"),
+        (48, "CarbEnteredHistoryLog"),
+        (16, "BGHistoryLog"),
+        (256, "DexcomG6CGMHistoryLog"),
+        (5, "AlarmActivatedHistoryLog"),
+        (4, "AlertActivatedHistoryLog"),
+        (28, "AlarmClearedHistoryLog"),
+        (12, "PumpingResumedHistoryLog"),
+        (11, "PumpingSuspendedHistoryLog"),
+        (33, "CartridgeFilledHistoryLog"),
+        (61, "CannulaFilledHistoryLog"),
         (63, "TubingFilledHistoryLog"),
+        (26, "AlertClearedHistoryLog"),
+        (99, "ArmInitHistoryLog"),
+        (279, "BasalDeliveryHistoryLog"),
+        (371, "CgmAlertAckDexHistoryLog"),
+        (369, "CgmAlertActivatedDexHistoryLog"),
+        (460, "CgmAlertActivatedFsl2HistoryLog"),
+        (370, "CgmAlertClearedDexHistoryLog"),
+        (461, "CgmAlertClearedFsl2HistoryLog"),
+        (372, "CgmDataFsl2HistoryLog"),
+        (480, "CgmDataFsl3HistoryLog"),
+        (406, "CgmJoinSessionFsl2HistoryLog"),
+        (477, "CgmJoinSessionFsl3HistoryLog"),
+        (394, "CgmJoinSessionG7HistoryLog"),
+        (404, "CgmStartSessionFsl2HistoryLog"),
+        (405, "CgmStopSessionFsl2HistoryLog"),
+        (486, "CgmStopSessionFsl3HistoryLog"),
+        (447, "CgmStopSessionG7HistoryLog"),
+        (93, "CorrectionDeclinedHistoryLog"),
+        (313, "DailyStatusHistoryLog"),
+        (60, "DataLogCorruptionHistoryLog"),
+        (14, "DateChangeHistoryLog"),
+        (399, "DexcomG7CGMHistoryLog"),
+        (82, "FactoryResetHistoryLog"),
+        (69, "IdpActionHistoryLog"),
+        (57, "IdpActionMsg2HistoryLog"),
+        (70, "IdpBolusHistoryLog"),
+        (71, "IdpListHistoryLog"),
+        (68, "IdpTimeDependentSegmentHistoryLog"),
+        (0, "LogErasedHistoryLog"),
+        (6, "MalfunctionHistoryLog"),
+        (90, "NewDayHistoryLog"),
+        (74, "ParamChangeGlobalSettingsHistoryLog"),
+        (73, "ParamChangePumpSettingsHistoryLog"),
+        (97, "ParamChangeRemSettingsHistoryLog"),
+        (96, "ParamChangeReminderHistoryLog"),
+        (53, "ShelfModeHistoryLog"),
+        (13, "TimeChangedHistoryLog"),
+        (36, "UsbConnectedHistoryLog"),
+        (37, "UsbDisconnectedHistoryLog"),
+        (67, "UsbEnumeratedHistoryLog"),
+        (307, "VersionsAHistoryLog"),
     ]
 
     @Test(arguments: cases)
@@ -42,6 +94,40 @@ private func record(typeId: Int, pumpTimeSec: UInt32, seq: UInt32, tail: [UInt8]
         #expect(event.typeId == typeId)
         #expect(event.pumpTimeSec == 461_500_000)
         #expect(event.sequenceNum == 42)
+    }
+}
+
+/// History-log types present in references/pumpx2@dad3eea but NOT decodable by the *vendored*
+/// oracle JAR (an older cliparser build that predates these types / uses stale typeId mappings).
+/// They can't be oracle-cross-checked here, so we verify Swift-side dispatch only; their field
+/// offsets are faithful verbatim ports of the current upstream parse(). Rebuild the vendored JAR
+/// from dad3eea to promote these into HistoryLogOracleParityTests.
+@Suite struct HistoryLogSwiftDispatchTests {
+    static let cases: [(Int, String)] = [
+        (171, "CgmAlertActivatedHistoryLog"),
+        (172, "CgmAlertClearedHistoryLog"),
+        (210, "CgmCalibrationGxHistoryLog"),
+        (160, "CgmCalibrationHistoryLog"),
+        (211, "CgmDataGxHistoryLog"),
+        (151, "CgmDataSampleHistoryLog"),
+        (213, "CgmJoinSessionHistoryLog"),
+        (212, "CgmStartSessionHistoryLog"),
+        (214, "CgmStopSessionHistoryLog"),
+        (230, "ControlIQPcmChangeHistoryLog"),
+        (229, "ControlIQUserModeChangeHistoryLog"),
+        (199, "HypoMinimizerResumeHistoryLog"),
+        (198, "HypoMinimizerSuspendHistoryLog"),
+        (140, "PlgsPeriodicHistoryLog"),
+        (203, "UpdateStatusHistoryLog"),
+        (191, "VersionInfoHistoryLog"),
+    ]
+    @Test(arguments: cases)
+    func dispatch(typeId: Int, name: String) {
+        var r = [UInt8](repeating: 0, count: 26)
+        let t = Bytes.firstTwoBytesLittleEndian(typeId); r[0] = t[0]; r[1] = t[1]
+        let event = HistoryLogParser.parse(record: r)
+        #expect(String(describing: type(of: event)) == name)
+        #expect(event.typeId == typeId)
     }
 }
 
