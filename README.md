@@ -22,6 +22,27 @@ Garmin remotes build on.
 | `PumpX2BLE` | Core Bluetooth central: scan / connect / bond / discover / notify. Platform-agnostic (iOS + watchOS). |
 | `PumpX2BenchHarness` | Executable bench/oracle CLI: connect → status → saline bolus → cancel. |
 
+## Use it in your project
+
+PumpX2Kit is a reusable SwiftPM package (iOS 16+, watchOS 9+, macOS 13+). Add it as a dependency and
+import the products you need:
+
+```swift
+// Package.swift
+.package(url: "https://github.com/faBolus-app/PumpX2Kit.git", from: "0.1.0")
+// then, per target:
+.product(name: "PumpX2Messages", package: "PumpX2Kit"),  // message framing + models
+.product(name: "PumpX2Auth", package: "PumpX2Kit"),      // pairing (JPAKE/legacy) + HMAC signing
+.product(name: "PumpX2BLE", package: "PumpX2Kit"),       // Core Bluetooth transport
+```
+
+Typical entry points: `PumpBLEClient` (scan/connect/subscribe/write), `PairingCoordinator`
+(JPAKE / legacy pairing), and the request/response types in `PumpX2Messages`. For a worked example
+of driving a full connect → status → bolus → cancel flow, see `PumpX2BenchHarness` and the faBolus
+app's `TandemBackend` (which adapts this library to faBolus's `PumpBackend` interface). To build a
+non-faBolus app on it, depend on these products directly — you don't need faBolus. Contributions go
+through PR, not fork; see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 ## The cliparser oracle
 
 Every outgoing message must **byte-match** the upstream `cliparser` output ("byte-exact or
