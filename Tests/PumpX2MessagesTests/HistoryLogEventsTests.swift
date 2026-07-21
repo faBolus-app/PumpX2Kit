@@ -97,11 +97,21 @@ private func record(typeId: Int, pumpTimeSec: UInt32, seq: UInt32, tail: [UInt8]
     }
 }
 
-/// History-log types present in references/pumpx2@dad3eea but NOT decodable by the *vendored*
-/// oracle JAR (an older cliparser build that predates these types / uses stale typeId mappings).
-/// They can't be oracle-cross-checked here, so we verify Swift-side dispatch only; their field
-/// offsets are faithful verbatim ports of the current upstream parse(). Rebuild the vendored JAR
-/// from dad3eea to promote these into HistoryLogOracleParityTests.
+/// History-log types the oracle *cannot* byte-exact cross-check at the pinned
+/// references/pumpx2@dad3eea — not because the vendored JAR is stale (it is verified
+/// byte-identical to a fresh dad3eea `:cliparser:shadowJar` build), but because upstream's
+/// `HistoryLogParser.parse()` decodes the typeId from a **signed** first byte with a `+512`
+/// fixup: `int t = rawStream[0]; if (t < 0) t += 512; if (rawStream[1] > 0) t += 256*rawStream[1]`.
+/// Every typeId here is in 128–255 (high bit set, second byte 0), so upstream computes `t+512`
+/// (e.g. 230 → 486, 191 → 447) instead of the real id — 14 of these miss the registry and fall
+/// back to UnknownHistoryLog, while 230/191 collide onto CgmStopSessionFsl3(486)/CgmStopSessionG7(447).
+/// The Swift port uses `readShort(raw,0) & 0x0FFF` (unsigned, 12-bit) and decodes them correctly,
+/// so it intentionally diverges from the oracle for exactly this range. The cliparser CLI's only
+/// history-log path (`historylog`) routes through the buggy parse(), so there is no same-bytes way
+/// to oracle-verify these; a rebuild does NOT change it. We verify Swift-side dispatch only; each
+/// class's field offsets are faithful verbatim ports of upstream's parse(). Promoting these into
+/// HistoryLogOracleParityTests would require upstream's parse() decode fix (a pumpx2 commit past
+/// dad3eea), not a JAR rebuild.
 @Suite struct HistoryLogSwiftDispatchTests {
     static let cases: [(Int, String)] = [
         (171, "CgmAlertActivatedHistoryLog"),
