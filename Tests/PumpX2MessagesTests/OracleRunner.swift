@@ -54,6 +54,18 @@ enum OracleRunner {
             && FileManager.default.isExecutableFile(atPath: javaPath)
     }
 
+    /// Serializes every cliparser invocation across the whole test run. swift-testing executes
+    /// test cases in parallel, so without this the ~45 oracle calls would each spawn a fresh JVM
+    /// simultaneously and contend for CPU/memory; on a loaded box that produced transient
+    /// "oracle failed: exit 1" / "no JSON in output" failures. One JVM at a time is deterministic
+    /// (a single spawn is ~0.25s, so the whole serialized run adds only a few seconds), and the
+    /// cache below means identical encode requests never re-spawn.
+    private static let processLock = NSLock()
+
+    /// Memoized encode results, keyed on the full request. All access is serialized by
+    /// `processLock`, so the concurrency checker's "unsafe" caveat is satisfied by hand.
+    nonisolated(unsafe) private static var cache: [String: EncodeResult] = [:]
+
     /// A fixed legacy pairing code + pump-time used for signed-message parity tests. The HMAC
     /// key for a legacy pairing is the code's ASCII bytes (see PumpStateSupplier), so the same
     /// values fed to Swift Packetize and to the oracle env produce identical signed packets.
@@ -73,6 +85,14 @@ enum OracleRunner {
         guard isAvailable else {
             throw OracleError.unavailable("jar=\(jarPath) java=\(javaPath)")
         }
+        let cacheKey = "\(txId)|\(messageName)|\(json)|\(pairingCode ?? "")|\(pumpTimeSinceReset.map(String.init) ?? "")"
+
+        // Serialize the JVM spawn (and guard the cache) so parallel test cases never contend.
+        processLock.lock()
+        defer { processLock.unlock() }
+
+        if let cached = cache[cacheKey] { return cached }
+
         var env: [String: String] = [:]
         if let pairingCode { env["PUMP_PAIRING_CODE"] = pairingCode }
         if let pumpTimeSinceReset { env["PUMP_TIME_SINCE_RESET"] = String(pumpTimeSinceReset) }
@@ -87,7 +107,9 @@ enum OracleRunner {
               let data = line.data(using: .utf8) else {
             throw OracleError.failed("no JSON in output: \(out)\n\(err)")
         }
-        return try JSONDecoder().decode(EncodeResult.self, from: data)
+        let result = try JSONDecoder().decode(EncodeResult.self, from: data)
+        cache[cacheKey] = result
+        return result
     }
 
     /// Convenience: just the packet hex strings.
@@ -109,6 +131,11 @@ enum OracleRunner {
         proc.standardOutput = outPipe
         proc.standardError = errPipe
         try proc.run()
+        // stdout carries the JSON result; stderr carries only short diagnostics for `encode`
+        // (well under the 64KB pipe buffer), so a sequential drain is safe here. We deliberately
+        // do NOT offload one pipe to a background dispatch queue: `run` executes while holding
+        // `processLock`, and swift-testing's parallel cases block on that same lock — grabbing a
+        // second dispatch worker under those conditions can starve the pool and deadlock.
         let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
         let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
         proc.waitUntilExit()
