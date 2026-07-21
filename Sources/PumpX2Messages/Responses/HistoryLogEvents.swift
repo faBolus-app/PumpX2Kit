@@ -129,6 +129,58 @@ public enum HistoryLogParser {
         add(UsbEnumeratedHistoryLog.self)
         add(VersionInfoHistoryLog.self)
         add(VersionsAHistoryLog.self)
+        add(AAExerciseChoiceChangeHistoryLog.self)
+        add(AAExerciseTimeChangeHistoryLog.self)
+        add(AATdiEstChangeHistoryLog.self)
+        add(AaAutoBolusRejectedHistoryLog.self)
+        add(AaDeliveryStatusChangeHistoryLog.self)
+        add(AaEnableSettingChangeHistoryLog.self)
+        add(AaSleepScheduleChangeHistoryLog.self)
+        add(AaTdiSettingChangeHistoryLog.self)
+        add(AaWeightSettingChangeHistoryLog.self)
+        add(AlarmAckHistoryLog.self)
+        add(AlertAckHistoryLog.self)
+        add(BasalIqSettingsChangeHistoryLog.self)
+        add(CartridgeInsertedHistoryLog.self)
+        add(CartridgeRemovedHistoryLog.self)
+        add(CgmAlertAckHistoryLog.self)
+        add(CgmAnnuSettingsHistoryLog.self)
+        add(CgmBleCalibrationEvtG7HistoryLog.self)
+        add(CgmCalibrationG7HistoryLog.self)
+        add(CgmFraSettingsHistoryLog.self)
+        add(CgmHgaSettingsHistoryLog.self)
+        add(CgmInactiveG7HistoryLog.self)
+        add(CgmInactiveGxHistoryLog.self)
+        add(CgmLgaSettingsHistoryLog.self)
+        add(CgmOorSettingsHistoryLog.self)
+        add(CgmPairingCodeG7HistoryLog.self)
+        add(CgmRejoinSessionHistoryLog.self)
+        add(CgmRraSettingsHistoryLog.self)
+        add(CgmSensorTypeChangeHistoryLog.self)
+        add(CgmSessionTypeChangeHistoryLog.self)
+        add(CgmStartSensorReqG7HistoryLog.self)
+        add(CgmStartSessionReqGxHistoryLog.self)
+        add(CgmStopSessionMsg1HistoryLog.self)
+        add(CgmStopSessionMsg2HistoryLog.self)
+        add(CgmStopSessionReqG7HistoryLog.self)
+        add(CgmStopSessionReqGxHistoryLog.self)
+        add(CgmTransmitterIdGxHistoryLog.self)
+        add(CgmTransmitterIdHistoryLog.self)
+        add(CgmTransmitterVersionGxHistoryLog.self)
+        add(CgmUnexpectedGeAlertHistoryLog.self)
+        add(ConfirmCartridgeFilledHistoryLog.self)
+        add(FillEstimateFinalHistoryLog.self)
+        add(MalfunctionAckHistoryLog.self)
+        add(PrimeInprocessHistoryLog.self)
+        add(ReminderActivatedHistoryLog.self)
+        add(ReminderDismissedHistoryLog.self)
+        add(ReminderSnoozedHistoryLog.self)
+        add(SnoozeActivatedHistoryLog.self)
+        add(TipsErrorHistoryLog.self)
+        add(TipscReqPrimeCannulaHistoryLog.self)
+        add(WumpCartridgeFilledHistoryLog.self)
+        add(WumpCartridgeRemovedHistoryLog.self)
+        add(WumpOcclusionDebugHistoryLog.self)
         return r
     }()
 
@@ -1944,5 +1996,857 @@ public struct VersionsAHistoryLog: HistoryLogEvent {
         armSwVersion = Int(Bytes.readUint32(raw, 14))
         blePartNumber = Int(Bytes.readUint32(raw, 18))
         bleSwVersion = Int(Bytes.readUint32(raw, 22))
+    }
+}
+
+// MARK: - Remaining events (swift-dispatch only; not in oracle LOG_MESSAGE_TYPES)
+
+/// AA Exercise Choice Change — history-log event (typeId 319). Ported from AAExerciseChoiceChangeHistoryLog.java.
+public struct AAExerciseChoiceChangeHistoryLog: HistoryLogEvent {
+    public static let typeId = 319
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// AA Exercise Time Change — history-log event (typeId 318). Ported from AAExerciseTimeChangeHistoryLog.java.
+public struct AAExerciseTimeChangeHistoryLog: HistoryLogEvent {
+    public static let typeId = 318
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// AA TDI Estimate Change — history-log event (typeId 332). Ported from AATdiEstChangeHistoryLog.java.
+public struct AATdiEstChangeHistoryLog: HistoryLogEvent {
+    public static let typeId = 332
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// AA Auto Bolus Rejected — history-log event (typeId 288). Ported from AaAutoBolusRejectedHistoryLog.java.
+public struct AaAutoBolusRejectedHistoryLog: HistoryLogEvent {
+    public static let typeId = 288
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// AA Delivery Status Change — history-log event (typeId 238). Ported from AaDeliveryStatusChangeHistoryLog.java.
+public struct AaDeliveryStatusChangeHistoryLog: HistoryLogEvent {
+    public static let typeId = 238
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// AA Enable Setting Change — history-log event (typeId 244). Ported from AaEnableSettingChangeHistoryLog.java.
+public struct AaEnableSettingChangeHistoryLog: HistoryLogEvent {
+    public static let typeId = 244
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public private(set) var enabled: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+        enabled = Int(raw[10])
+    }
+}
+
+/// AA Sleep Schedule Change — history-log event (typeId 235). Ported from AaSleepScheduleChangeHistoryLog.java.
+public struct AaSleepScheduleChangeHistoryLog: HistoryLogEvent {
+    public static let typeId = 235
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// AA TDI Setting Change — history-log event (typeId 245). Ported from AaTdiSettingChangeHistoryLog.java.
+public struct AaTdiSettingChangeHistoryLog: HistoryLogEvent {
+    public static let typeId = 245
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// AA Weight Setting Change — history-log event (typeId 246). Ported from AaWeightSettingChangeHistoryLog.java.
+public struct AaWeightSettingChangeHistoryLog: HistoryLogEvent {
+    public static let typeId = 246
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// Alarm Ack — history-log event (typeId 8). Ported from AlarmAckHistoryLog.java.
+public struct AlarmAckHistoryLog: HistoryLogEvent {
+    public static let typeId = 8
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public private(set) var alarmId: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+        alarmId = Int(Bytes.readUint32(raw, 10))
+    }
+}
+
+/// Alert Ack — history-log event (typeId 27). Ported from AlertAckHistoryLog.java.
+public struct AlertAckHistoryLog: HistoryLogEvent {
+    public static let typeId = 27
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public private(set) var alertId: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+        alertId = Int(Bytes.readUint32(raw, 10))
+    }
+}
+
+/// Basal IQ Settings Change — history-log event (typeId 142). Ported from BasalIqSettingsChangeHistoryLog.java.
+public struct BasalIqSettingsChangeHistoryLog: HistoryLogEvent {
+    public static let typeId = 142
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// Cartridge Inserted — history-log event (typeId 32). Ported from CartridgeInsertedHistoryLog.java.
+public struct CartridgeInsertedHistoryLog: HistoryLogEvent {
+    public static let typeId = 32
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// Cartridge Removed — history-log event (typeId 31). Ported from CartridgeRemovedHistoryLog.java.
+public struct CartridgeRemovedHistoryLog: HistoryLogEvent {
+    public static let typeId = 31
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// CGM Alert Ack — history-log event (typeId 173). Ported from CgmAlertAckHistoryLog.java.
+public struct CgmAlertAckHistoryLog: HistoryLogEvent {
+    public static let typeId = 173
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public private(set) var alertId: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+        alertId = Int(Bytes.readUint32(raw, 10))
+    }
+}
+
+/// CGM ANNU Settings — history-log event (typeId 157). Ported from CgmAnnuSettingsHistoryLog.java.
+public struct CgmAnnuSettingsHistoryLog: HistoryLogEvent {
+    public static let typeId = 157
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// CgmBleCalibrationEvtG7HistoryLog — history-log event (typeId 439). Ported from CgmBleCalibrationEvtG7HistoryLog.java.
+public struct CgmBleCalibrationEvtG7HistoryLog: HistoryLogEvent {
+    public static let typeId = 439
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public private(set) var isCalibrationAccepted: Bool = false
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+        isCalibrationAccepted = raw[10] != 0
+    }
+}
+
+/// CgmCalibrationG7HistoryLog — history-log event (typeId 438). Ported from CgmCalibrationG7HistoryLog.java.
+public struct CgmCalibrationG7HistoryLog: HistoryLogEvent {
+    public static let typeId = 438
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public private(set) var bg: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+        bg = Int(Bytes.readUint32(raw, 10))
+    }
+}
+
+/// CGM FRA Settings — history-log event (typeId 168). Ported from CgmFraSettingsHistoryLog.java.
+public struct CgmFraSettingsHistoryLog: HistoryLogEvent {
+    public static let typeId = 168
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public private(set) var alertLevel: Int = 0
+    public private(set) var repeatDuration: Int = 0
+    public private(set) var isEnabled: Bool = false
+    public private(set) var modifiedField: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+        alertLevel = Bytes.readShort(raw, 10)
+        repeatDuration = Bytes.readShort(raw, 12)
+        isEnabled = raw[14] != 0
+        modifiedField = Bytes.readShort(raw, 16)
+    }
+}
+
+/// CGM HGA Settings — history-log event (typeId 165). Ported from CgmHgaSettingsHistoryLog.java.
+public struct CgmHgaSettingsHistoryLog: HistoryLogEvent {
+    public static let typeId = 165
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public private(set) var alertLevel: Int = 0
+    public private(set) var repeatDuration: Int = 0
+    public private(set) var isEnabled: Bool = false
+    public private(set) var modifiedField: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+        alertLevel = Bytes.readShort(raw, 10)
+        repeatDuration = Bytes.readShort(raw, 12)
+        isEnabled = raw[14] != 0
+        modifiedField = Bytes.readShort(raw, 16)
+    }
+}
+
+/// CgmInactiveG7HistoryLog — history-log event (typeId 441). Ported from CgmInactiveG7HistoryLog.java.
+public struct CgmInactiveG7HistoryLog: HistoryLogEvent {
+    public static let typeId = 441
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// CGM Inactive GX — history-log event (typeId 215). Ported from CgmInactiveGxHistoryLog.java.
+public struct CgmInactiveGxHistoryLog: HistoryLogEvent {
+    public static let typeId = 215
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// CGM LGA Settings — history-log event (typeId 166). Ported from CgmLgaSettingsHistoryLog.java.
+public struct CgmLgaSettingsHistoryLog: HistoryLogEvent {
+    public static let typeId = 166
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public private(set) var alertLevel: Int = 0
+    public private(set) var repeatDuration: Int = 0
+    public private(set) var isEnabled: Bool = false
+    public private(set) var modifiedField: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+        alertLevel = Bytes.readShort(raw, 10)
+        repeatDuration = Bytes.readShort(raw, 12)
+        isEnabled = raw[14] != 0
+        modifiedField = Bytes.readShort(raw, 16)
+    }
+}
+
+/// CGM OOR Settings — history-log event (typeId 169). Ported from CgmOorSettingsHistoryLog.java.
+public struct CgmOorSettingsHistoryLog: HistoryLogEvent {
+    public static let typeId = 169
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public private(set) var alertLevel: Int = 0
+    public private(set) var repeatDuration: Int = 0
+    public private(set) var isEnabled: Bool = false
+    public private(set) var modifiedField: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+        alertLevel = Bytes.readShort(raw, 10)
+        repeatDuration = Bytes.readShort(raw, 12)
+        isEnabled = raw[14] != 0
+        modifiedField = Bytes.readShort(raw, 16)
+    }
+}
+
+/// CGM Pairing Code G7 — history-log event (typeId 395). Ported from CgmPairingCodeG7HistoryLog.java.
+public struct CgmPairingCodeG7HistoryLog: HistoryLogEvent {
+    public static let typeId = 395
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public private(set) var pairingCode: String = ""
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+        pairingCode = Bytes.readString(raw, 10, 16)
+    }
+}
+
+/// CGM Rejoin Session — history-log event (typeId 367). Ported from CgmRejoinSessionHistoryLog.java.
+public struct CgmRejoinSessionHistoryLog: HistoryLogEvent {
+    public static let typeId = 367
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// CGM RRA Settings — history-log event (typeId 167). Ported from CgmRraSettingsHistoryLog.java.
+public struct CgmRraSettingsHistoryLog: HistoryLogEvent {
+    public static let typeId = 167
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public private(set) var alertLevel: Int = 0
+    public private(set) var repeatDuration: Int = 0
+    public private(set) var isEnabled: Bool = false
+    public private(set) var modifiedField: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+        alertLevel = Bytes.readShort(raw, 10)
+        repeatDuration = Bytes.readShort(raw, 12)
+        isEnabled = raw[14] != 0
+        modifiedField = Bytes.readShort(raw, 16)
+    }
+}
+
+/// CGM Sensor Type Change — history-log event (typeId 368). Ported from CgmSensorTypeChangeHistoryLog.java.
+public struct CgmSensorTypeChangeHistoryLog: HistoryLogEvent {
+    public static let typeId = 368
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// CGM Session Type Change — history-log event (typeId 267). Ported from CgmSessionTypeChangeHistoryLog.java.
+public struct CgmSessionTypeChangeHistoryLog: HistoryLogEvent {
+    public static let typeId = 267
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// CGM Start Sensor Request G7 — history-log event (typeId 390). Ported from CgmStartSensorReqG7HistoryLog.java.
+public struct CgmStartSensorReqG7HistoryLog: HistoryLogEvent {
+    public static let typeId = 390
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// CGM Start Session Request GX — history-log event (typeId 217). Ported from CgmStartSessionReqGxHistoryLog.java.
+public struct CgmStartSessionReqGxHistoryLog: HistoryLogEvent {
+    public static let typeId = 217
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// CGM Stop Session Msg 1 — history-log event (typeId 162). Ported from CgmStopSessionMsg1HistoryLog.java.
+public struct CgmStopSessionMsg1HistoryLog: HistoryLogEvent {
+    public static let typeId = 162
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// CGM Stop Session Msg 2 — history-log event (typeId 163). Ported from CgmStopSessionMsg2HistoryLog.java.
+public struct CgmStopSessionMsg2HistoryLog: HistoryLogEvent {
+    public static let typeId = 163
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// CgmStopSessionReqG7HistoryLog — history-log event (typeId 443). Ported from CgmStopSessionReqG7HistoryLog.java.
+public struct CgmStopSessionReqG7HistoryLog: HistoryLogEvent {
+    public static let typeId = 443
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// CGM Stop Session Request GX — history-log event (typeId 218). Ported from CgmStopSessionReqGxHistoryLog.java.
+public struct CgmStopSessionReqGxHistoryLog: HistoryLogEvent {
+    public static let typeId = 218
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// CGM Transmitter ID GX — history-log event (typeId 216). Ported from CgmTransmitterIdGxHistoryLog.java.
+public struct CgmTransmitterIdGxHistoryLog: HistoryLogEvent {
+    public static let typeId = 216
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// CGM Transmitter ID — history-log event (typeId 156). Ported from CgmTransmitterIdHistoryLog.java.
+public struct CgmTransmitterIdHistoryLog: HistoryLogEvent {
+    public static let typeId = 156
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// CGM Transmitter Version GX — history-log event (typeId 220). Ported from CgmTransmitterVersionGxHistoryLog.java.
+public struct CgmTransmitterVersionGxHistoryLog: HistoryLogEvent {
+    public static let typeId = 220
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// CGM Unexpected GE Alert — history-log event (typeId 187). Ported from CgmUnexpectedGeAlertHistoryLog.java.
+public struct CgmUnexpectedGeAlertHistoryLog: HistoryLogEvent {
+    public static let typeId = 187
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// Confirm Cartridge Filled — history-log event (typeId 41). Ported from ConfirmCartridgeFilledHistoryLog.java.
+public struct ConfirmCartridgeFilledHistoryLog: HistoryLogEvent {
+    public static let typeId = 41
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// Fill Estimate Final — history-log event (typeId 98). Ported from FillEstimateFinalHistoryLog.java.
+public struct FillEstimateFinalHistoryLog: HistoryLogEvent {
+    public static let typeId = 98
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// Malfunction Ack — history-log event (typeId 7). Ported from MalfunctionAckHistoryLog.java.
+public struct MalfunctionAckHistoryLog: HistoryLogEvent {
+    public static let typeId = 7
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public private(set) var malfId: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+        malfId = Int(Bytes.readUint32(raw, 10))
+    }
+}
+
+/// Prime In Process — history-log event (typeId 348). Ported from PrimeInprocessHistoryLog.java.
+public struct PrimeInprocessHistoryLog: HistoryLogEvent {
+    public static let typeId = 348
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// Reminder Activated — history-log event (typeId 25). Ported from ReminderActivatedHistoryLog.java.
+public struct ReminderActivatedHistoryLog: HistoryLogEvent {
+    public static let typeId = 25
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public private(set) var reminderId: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+        reminderId = Int(Bytes.readUint32(raw, 10))
+    }
+}
+
+/// Reminder Dismissed — history-log event (typeId 29). Ported from ReminderDismissedHistoryLog.java.
+public struct ReminderDismissedHistoryLog: HistoryLogEvent {
+    public static let typeId = 29
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public private(set) var reminderId: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+        reminderId = Int(Bytes.readUint32(raw, 10))
+    }
+}
+
+/// Reminder Snoozed — history-log event (typeId 30). Ported from ReminderSnoozedHistoryLog.java.
+public struct ReminderSnoozedHistoryLog: HistoryLogEvent {
+    public static let typeId = 30
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public private(set) var reminderId: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+        reminderId = Int(Bytes.readUint32(raw, 10))
+    }
+}
+
+/// Snooze Activated — history-log event (typeId 286). Ported from SnoozeActivatedHistoryLog.java.
+public struct SnoozeActivatedHistoryLog: HistoryLogEvent {
+    public static let typeId = 286
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// TIPS Error — history-log event (typeId 419). Ported from TipsErrorHistoryLog.java.
+public struct TipsErrorHistoryLog: HistoryLogEvent {
+    public static let typeId = 419
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public private(set) var messageType: Int = 0
+    public private(set) var requestCode: Int = 0
+    public private(set) var errorCode: Int = 0
+    public private(set) var isDataMasked: Bool = false
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+        messageType = Int(raw[10])
+        requestCode = Int(raw[11])
+        errorCode = Int(raw[12])
+        isDataMasked = raw[13] != 0
+    }
+}
+
+/// TIPSC Req Prime Cannula — history-log event (typeId 291). Ported from TipscReqPrimeCannulaHistoryLog.java.
+public struct TipscReqPrimeCannulaHistoryLog: HistoryLogEvent {
+    public static let typeId = 291
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// WUMP Cartridge Filled — history-log event (typeId 301). Ported from WumpCartridgeFilledHistoryLog.java.
+public struct WumpCartridgeFilledHistoryLog: HistoryLogEvent {
+    public static let typeId = 301
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// WUMP Cartridge Removed — history-log event (typeId 302). Ported from WumpCartridgeRemovedHistoryLog.java.
+public struct WumpCartridgeRemovedHistoryLog: HistoryLogEvent {
+    public static let typeId = 302
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
+    }
+}
+
+/// WUMP Occlusion Debug — history-log event (typeId 283). Ported from WumpOcclusionDebugHistoryLog.java.
+public struct WumpOcclusionDebugHistoryLog: HistoryLogEvent {
+    public static let typeId = 283
+    public var cargo: [UInt8]
+    public private(set) var pumpTimeSec: UInt32 = 0
+    public private(set) var sequenceNum: UInt32 = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 26 else { return }
+        pumpTimeSec = Bytes.readUint32(raw, 2)
+        sequenceNum = Bytes.readUint32(raw, 6)
     }
 }
