@@ -412,6 +412,49 @@ struct OracleParityTests {
         #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
     }
 
+    // --- Mobi-workflow messages that previously lacked any test (Plan A / A1) ---
+
+    // SetG6TransmitterIdRequest: 6-char id written into a 16-byte field (6 chars + 10 pad). The
+    // oracle's reflection is unreliable for the String ctor here, so assert the cargo layout directly.
+    @Test func setG6TransmitterIdRequestCargo() {
+        let m = SetG6TransmitterIdRequest(txId: "123456")
+        #expect(m.cargo == Array("123456".utf8) + [UInt8](repeating: 0, count: 10))
+        #expect(SetG6TransmitterIdRequest.props.opCode == 0xB0 && SetG6TransmitterIdRequest.props.signed)
+        #expect(SetG6TransmitterIdRequest.props.size == 16)
+    }
+
+    @Test func cgmHighLowAlertRequestMatchesOracle() throws {
+        // ctor: alertType, threshold, repeatDurationMinutes, enableAlert, bitmask
+        let oracle = try oracleSignedPackets("CgmHighLowAlertRequest", txId: 40, json: "[1, 200, 30, true, 0]")
+        let swift = try swiftSignedPackets(
+            CgmHighLowAlertRequest(alertType: 1, threshold: 200, repeatDurationMinutes: 30,
+                                   enableAlert: true, bitmask: 0), txId: 40)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    // CreateIDPRequest / SetIDPSegmentRequest have many positional args (incl. a name string and a
+    // UInt32 carb ratio); the oracle's reflection ctor is nondeterministic for them, so assert the
+    // built cargo's shape + key fields + props instead (locks the byte layout as a change-detector).
+    @Test func createIDPRequestShape() {
+        let m = CreateIDPRequest(name: "Test", firstSegmentProfileCarbRatio: 12000,
+                                 firstSegmentProfileBasalRate: 100, firstSegmentProfileTargetBG: 110,
+                                 firstSegmentProfileISF: 50, profileInsulinDuration: 300,
+                                 timeSegmentBitmask: 1, bolusSettingsBitmask: 0, carbEntry: 1, idpSourceId: 0)
+        #expect(m.cargo.count == 35)                                  // matches props.size
+        #expect(Array(m.cargo.prefix(4)) == Array("Test".utf8))       // name in the first 17 bytes
+        #expect(CreateIDPRequest.props.opCode == 0xE6)
+        #expect(CreateIDPRequest.props.signed && CreateIDPRequest.props.modifiesInsulinDelivery)
+    }
+
+    @Test func setIDPSegmentRequestShape() {
+        let m = SetIDPSegmentRequest(idpId: 4, profileIndex: 0, segmentIndex: 1, operationId: 2,
+                                     profileStartTime: 0, profileBasalRate: 100, profileCarbRatio: 12000,
+                                     profileTargetBG: 110, profileISF: 50, idpStatusId: 0)
+        #expect(m.cargo.count == 17)                                  // matches props.size
+        #expect(Array(m.cargo.prefix(4)) == [4, 0, 1, 2])             // idpId, profileIndex, segIdx, opId
+        #expect(SetIDPSegmentRequest.props.opCode == 0xAA && SetIDPSegmentRequest.props.signed)
+    }
+
     // SetIDPSettingsRequest's upstream ctor takes a ChangeType enum → oracle can't build it from an
     // int; assert cargo directly. [idpId, profileIndex] + LE u16 duration + [carbEntry, changeTypeId].
     @Test func setIDPSettingsRequestCargo() {
