@@ -245,6 +245,15 @@ import Testing
         #expect(msg.controlStateType == 1)
     }
 
+    @Test func soundsTimeControlResponsesParse() throws {
+        // PlaySoundResponse has no field constructor the oracle can use (byte[]-only) — see
+        // ResponseDirectTests.playSoundResponseOffsets.
+        let sounds = try OracleRunner.encode(txId: 42, messageName: "SetPumpSoundsResponse", json: "[0]").packets
+        #expect(try #require(try parse(sounds, on: .control).message as? SetPumpSoundsResponse).accepted)
+        let time = try OracleRunner.encode(txId: 43, messageName: "ChangeTimeDateResponse", json: "[0]").packets
+        #expect(try #require(try parse(time, on: .control).message as? ChangeTimeDateResponse).accepted)
+    }
+
     @Test func remoteEntryControlResponsesParse() throws {
         let carb = try OracleRunner.encode(txId: 39, messageName: "RemoteCarbEntryResponse", json: "[0]").packets
         #expect(try #require(try parse(carb, on: .control).message as? RemoteCarbEntryResponse).accepted)

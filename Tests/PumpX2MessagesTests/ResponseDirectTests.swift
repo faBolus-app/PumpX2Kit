@@ -168,6 +168,13 @@ import Testing
         #expect(m.bgSourceId == 0)
     }
 
+    /// PlaySoundResponse: status@0. Direct test — upstream has only a byte[] constructor, so the
+    /// oracle's reflection encoder can't build it from a JSON int.
+    @Test func playSoundResponseOffsets() {
+        #expect(PlaySoundResponse(cargo: [0]).accepted)
+        #expect(!PlaySoundResponse(cargo: [1]).accepted)
+    }
+
     /// SetTempRate / StopTempRate response offsets: status@0, tempRateId short@1. The oracle's own
     /// `SetTempRateResponse(int,int)` constructor is broken upstream (declares size=4 but buildCargo
     /// emits 3 bytes → Validate throws), so this is a direct offset test.

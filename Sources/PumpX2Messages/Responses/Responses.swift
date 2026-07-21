@@ -151,6 +151,39 @@ public struct StopTempRateResponse: ResponseMessage {
     public var accepted: Bool { status == 0 }
 }
 
+/// Ack for play-sound / find-my-pump (signed CONTROL). `PlaySoundResponse` (op 0xF5, 1B).
+public struct PlaySoundResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0xF5, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = PlaySoundResponse(cargo: raw) }
+    public var accepted: Bool { status == 0 }
+}
+
+/// Ack for set-pump-sounds (signed CONTROL). `SetPumpSoundsResponse` (op 0xE5, 1B).
+public struct SetPumpSoundsResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0xE5, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = SetPumpSoundsResponse(cargo: raw) }
+    public var accepted: Bool { status == 0 }
+}
+
+/// Ack for change-time-date (signed CONTROL). `ChangeTimeDateResponse` (op 0xD7, 1B).
+public struct ChangeTimeDateResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0xD7, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = ChangeTimeDateResponse(cargo: raw) }
+    public var accepted: Bool { status == 0 }
+}
+
 /// Ack for a remote carb entry (signed CONTROL). `RemoteCarbEntryResponse` (op 0xF3, 1B).
 public struct RemoteCarbEntryResponse: ResponseMessage {
     public static let props = MessageProps(opCode: 0xF3, size: 1, signed: true, type: .response, characteristic: .control)

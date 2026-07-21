@@ -255,6 +255,28 @@ struct OracleParityTests {
         #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
     }
 
+    @Test func playSoundRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("PlaySoundRequest", txId: 15)
+        let swift = try swiftSignedPackets(PlaySoundRequest(), txId: 15)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func setPumpSoundsRequestMatchesOracle() throws {
+        // 8-arg: quickBolus, general, reminder, alert, alarm, cgmA, cgmB, changeBitmask
+        let oracle = try oracleSignedPackets("SetPumpSoundsRequest", txId: 16, json: "[0, 1, 2, 3, 0, 1, 2, 4]")
+        let swift = try swiftSignedPackets(
+            SetPumpSoundsRequest(quickBolusAnnunRaw: 0, generalAnnunRaw: 1, reminderAnnunRaw: 2,
+                                 alertAnnunRaw: 3, alarmAnnunRaw: 0, cgmAlertAnnunA: 1,
+                                 cgmAlertAnnunB: 2, changeBitmaskRaw: 4), txId: 16)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func changeTimeDateRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("ChangeTimeDateRequest", txId: 17, json: "[461500000]")
+        let swift = try swiftSignedPackets(ChangeTimeDateRequest(tandemEpochTime: 461_500_000), txId: 17)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
     /// The crown jewel: a 1.0u standard bolus initiate, signed, byte-exact vs the oracle.
     @Test func initiateBolusRequestMatchesOracle() throws {
         // positional args: totalVolume, bolusID, bolusTypeBitmask, foodVolume,
