@@ -116,6 +116,7 @@ public enum ResponseParser {
         add(StreamDataReadinessResponse.self)
         add(UnknownMobiOpcode110Response.self)
         add(TempRateResponse.self)
+        add(ErrorResponse.self)
         // HISTORY_LOG (variable-size stream)
         add(HistoryLogStreamResponse.self)
         // CONTROL_STREAM state responses (A3) — one representative per opcode (upstream mirrors this)

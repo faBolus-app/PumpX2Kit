@@ -1500,6 +1500,24 @@ public struct UserInteractionResponse: ResponseMessage {
     public mutating func parse(_ raw: [UInt8]) { self = UserInteractionResponse(cargo: raw) }
 }
 
+/// Generic pump error reply (op 77). Sent when a request fails: `requestCodeId` = the failing
+/// request's opcode, `errorCodeId` = why. Cargo is 2 bytes (currentStatus) or 26 (control/signed).
+/// `response/ErrorResponse`.
+public struct ErrorResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 77, size: 2, type: .response, characteristic: .currentStatus)
+    public var cargo: [UInt8]
+    public private(set) var requestCodeId = 0
+    public private(set) var errorCodeId = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        if raw.count >= 2 { requestCodeId = Int(raw[0]); errorCodeId = Int(raw[1]) }
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = ErrorResponse(cargo: raw) }
+    /// errorCodeId 3 = INVALID_PARAMETER (then requestCodeId is the opcode that failed).
+    public var isInvalidParameter: Bool { errorCodeId == 3 }
+}
+
 // MARK: - Remaining A1 read responses (generated)
 
 /// Read response. Ported from ActiveAamBitsResponse.java (opcode raw -109).

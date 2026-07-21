@@ -168,6 +168,13 @@ import Testing
         #expect(m.bgSourceId == 0)
     }
 
+    /// ErrorResponse: requestCodeId@0 (failing opcode), errorCodeId@1. Direct test — upstream uses an
+    /// ErrorCode enum ctor the oracle reflection can't build from ints.
+    @Test func errorResponseOffsets() {
+        let m = ErrorResponse(cargo: [159, 3])
+        #expect(m.requestCodeId == 159 && m.errorCodeId == 3 && m.isInvalidParameter)
+    }
+
     /// CONTROL_STREAM state responses (A3): dispatch on .controlStream + offsets. Also exercises the
     /// characteristic-aware parser for opcodes that only exist on CONTROL_STREAM.
     @Test func controlStreamStateResponses() throws {
