@@ -151,6 +151,50 @@ public struct StopTempRateResponse: ResponseMessage {
     public var accepted: Bool { status == 0 }
 }
 
+/// Ack for set-low-insulin-alert (signed CONTROL). `SetLowInsulinAlertResponse` (op 0xDF, 1B).
+public struct SetLowInsulinAlertResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0xDF, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = SetLowInsulinAlertResponse(cargo: raw) }
+    public var accepted: Bool { status == 0 }
+}
+
+/// Ack for set-auto-off-alert (signed CONTROL). `SetAutoOffAlertResponse` (op 0xE1, 1B).
+public struct SetAutoOffAlertResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0xE1, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = SetAutoOffAlertResponse(cargo: raw) }
+    public var accepted: Bool { status == 0 }
+}
+
+/// Ack for set-modes (signed CONTROL). `SetModesResponse` (op 0xCD, 1B).
+public struct SetModesResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0xCD, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = SetModesResponse(cargo: raw) }
+    public var accepted: Bool { status == 0 }
+}
+
+/// Ack for set-active-IDP (signed CONTROL). `SetActiveIDPResponse` (op 0xED, 1B).
+public struct SetActiveIDPResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0xED, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = SetActiveIDPResponse(cargo: raw) }
+    public var accepted: Bool { status == 0 }
+}
+
 /// Ack for play-sound / find-my-pump (signed CONTROL). `PlaySoundResponse` (op 0xF5, 1B).
 public struct PlaySoundResponse: ResponseMessage {
     public static let props = MessageProps(opCode: 0xF5, size: 1, signed: true, type: .response, characteristic: .control)

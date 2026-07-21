@@ -168,6 +168,12 @@ import Testing
         #expect(m.bgSourceId == 0)
     }
 
+    /// SetModesResponse: status@0. Direct test — upstream has only a byte[] constructor.
+    @Test func setModesResponseOffsets() {
+        #expect(SetModesResponse(cargo: [0]).accepted)
+        #expect(!SetModesResponse(cargo: [3]).accepted)
+    }
+
     /// PlaySoundResponse: status@0. Direct test — upstream has only a byte[] constructor, so the
     /// oracle's reflection encoder can't build it from a JSON int.
     @Test func playSoundResponseOffsets() {

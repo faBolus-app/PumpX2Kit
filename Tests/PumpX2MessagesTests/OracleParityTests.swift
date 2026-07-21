@@ -226,10 +226,12 @@ struct OracleParityTests {
         #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
     }
 
-    @Test func setSensorTypeRequestMatchesOracle() throws {
-        let oracle = try oracleSignedPackets("SetSensorTypeRequest", txId: 11, json: "[2]")
-        let swift = try swiftSignedPackets(SetSensorTypeRequest(cgmSensorType: 2), txId: 11)
-        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    // SetSensorTypeRequest is cargo-asserted directly: upstream has ambiguous (int)/(CgmSensorType)
+    // constructors, so the oracle's reflection encoder nondeterministically ClassCast-fails on it
+    // (Java getConstructors() order). The signed-packetize path is covered by the other signed tests.
+    @Test func setSensorTypeRequestCargo() {
+        #expect(SetSensorTypeRequest(cgmSensorType: 2).cargo == [2])
+        #expect(SetSensorTypeRequest.props.opCode == 0xC0 && SetSensorTypeRequest.props.signed)
     }
 
     @Test func setG7PairingCodeRequestMatchesOracle() throws {
@@ -274,6 +276,31 @@ struct OracleParityTests {
     @Test func changeTimeDateRequestMatchesOracle() throws {
         let oracle = try oracleSignedPackets("ChangeTimeDateRequest", txId: 17, json: "[461500000]")
         let swift = try swiftSignedPackets(ChangeTimeDateRequest(tandemEpochTime: 461_500_000), txId: 17)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func setLowInsulinAlertRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("SetLowInsulinAlertRequest", txId: 18, json: "[20]")
+        let swift = try swiftSignedPackets(SetLowInsulinAlertRequest(insulinThreshold: 20), txId: 18)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func setAutoOffAlertRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("SetAutoOffAlertRequest", txId: 19, json: "[true, 720, 0]")
+        let swift = try swiftSignedPackets(
+            SetAutoOffAlertRequest(enableAutoOff: true, autoOffDuration: 720, bitmask: 0), txId: 19)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func setModesRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("SetModesRequest", txId: 20, json: "[2]")
+        let swift = try swiftSignedPackets(SetModesRequest(bitmap: 2), txId: 20)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func setActiveIDPRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("SetActiveIDPRequest", txId: 21, json: "[4, 0]")
+        let swift = try swiftSignedPackets(SetActiveIDPRequest(idpId: 4, profileIndex: 0), txId: 21)
         #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
     }
 

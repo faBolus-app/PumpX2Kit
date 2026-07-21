@@ -245,6 +245,16 @@ import Testing
         #expect(msg.controlStateType == 1)
     }
 
+    @Test func alertIdpControlResponsesParse() throws {
+        // SetModesResponse is byte[]-only (oracle can't build it) — see ResponseDirectTests.
+        let low = try OracleRunner.encode(txId: 44, messageName: "SetLowInsulinAlertResponse", json: "[0]").packets
+        #expect(try #require(try parse(low, on: .control).message as? SetLowInsulinAlertResponse).accepted)
+        let auto = try OracleRunner.encode(txId: 45, messageName: "SetAutoOffAlertResponse", json: "[0]").packets
+        #expect(try #require(try parse(auto, on: .control).message as? SetAutoOffAlertResponse).accepted)
+        let idp = try OracleRunner.encode(txId: 47, messageName: "SetActiveIDPResponse", json: "[0]").packets
+        #expect(try #require(try parse(idp, on: .control).message as? SetActiveIDPResponse).accepted)
+    }
+
     @Test func soundsTimeControlResponsesParse() throws {
         // PlaySoundResponse has no field constructor the oracle can use (byte[]-only) — see
         // ResponseDirectTests.playSoundResponseOffsets.
