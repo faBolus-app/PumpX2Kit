@@ -316,6 +316,27 @@ struct OracleParityTests {
         #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
     }
 
+    /// Empty-cargo cartridge/fill workflow commands (signed).
+    static let cartridgeFillEmpty: [(String, Message)] = [
+        ("EnterChangeCartridgeModeRequest", EnterChangeCartridgeModeRequest()),
+        ("ExitChangeCartridgeModeRequest", ExitChangeCartridgeModeRequest()),
+        ("EnterFillTubingModeRequest", EnterFillTubingModeRequest()),
+        ("ExitFillTubingModeRequest", ExitFillTubingModeRequest()),
+        ("PrimeTubingSuspendRequest", PrimeTubingSuspendRequest()),
+    ]
+    @Test(arguments: cartridgeFillEmpty)
+    func cartridgeFillEmptyRequestMatchesOracle(name: String, message: Message) throws {
+        let oracle = try oracleSignedPackets(name, txId: 24)
+        let swift = try swiftSignedPackets(message, txId: 24)
+        #expect(swift == oracle, "\(name): swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func fillCannulaRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("FillCannulaRequest", txId: 25, json: "[300]")
+        let swift = try swiftSignedPackets(FillCannulaRequest(primeSize: 300), txId: 25)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
     /// The crown jewel: a 1.0u standard bolus initiate, signed, byte-exact vs the oracle.
     @Test func initiateBolusRequestMatchesOracle() throws {
         // positional args: totalVolume, bolusID, bolusTypeBitmask, foodVolume,

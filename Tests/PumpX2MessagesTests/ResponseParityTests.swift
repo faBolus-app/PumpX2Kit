@@ -245,6 +245,19 @@ import Testing
         #expect(msg.controlStateType == 1)
     }
 
+    @Test func cartridgeFillControlResponsesParse() throws {
+        // status-ack responses (oracle-constructable via int status ctor)
+        for (name, tid) in [("EnterChangeCartridgeModeResponse", 52), ("ExitChangeCartridgeModeResponse", 53),
+                            ("EnterFillTubingModeResponse", 54), ("ExitFillTubingModeResponse", 55),
+                            ("FillCannulaResponse", 56)] {
+            let p = try OracleRunner.encode(txId: UInt8(tid), messageName: name, json: "[0]").packets
+            #expect(try parse(p, on: .control).opCode != 0, "\(name) parsed")
+        }
+        // PrimeTubingSuspendResponse is direct-tested (oracle can't build it) — see ResponseDirectTests.
+        let enter = try OracleRunner.encode(txId: 57, messageName: "FillCannulaResponse", json: "[0]").packets
+        #expect(try #require(try parse(enter, on: .control).message as? FillCannulaResponse).accepted)
+    }
+
     @Test func limitsControlResponsesParse() throws {
         let bolus = try OracleRunner.encode(txId: 50, messageName: "SetMaxBolusLimitResponse", json: "[0]").packets
         #expect(try #require(try parse(bolus, on: .control).message as? SetMaxBolusLimitResponse).accepted)

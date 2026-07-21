@@ -151,6 +151,70 @@ public struct StopTempRateResponse: ResponseMessage {
     public var accepted: Bool { status == 0 }
 }
 
+/// Acks for the cartridge-change / fill-tubing / fill-cannula workflow (signed CONTROL, status@0).
+public struct EnterChangeCartridgeModeResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0x91, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = EnterChangeCartridgeModeResponse(cargo: raw) }
+    public var accepted: Bool { status == 0 }
+}
+public struct ExitChangeCartridgeModeResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0x93, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = ExitChangeCartridgeModeResponse(cargo: raw) }
+    public var accepted: Bool { status == 0 }
+}
+public struct EnterFillTubingModeResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0x95, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = EnterFillTubingModeResponse(cargo: raw) }
+    public var accepted: Bool { status == 0 }
+}
+public struct ExitFillTubingModeResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0x97, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = ExitFillTubingModeResponse(cargo: raw) }
+    public var accepted: Bool { status == 0 }
+}
+public struct FillCannulaResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0x99, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = FillCannulaResponse(cargo: raw) }
+    public var accepted: Bool { status == 0 }
+}
+
+/// Ack for prime-tubing-suspend (signed CONTROL). `PrimeTubingSuspendResponse` (op 0xEF, 3B).
+/// statusCode@0, reserve@2.
+public struct PrimeTubingSuspendResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0xEF, size: 3, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var statusCode = 0
+    public private(set) var reserve = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        if !raw.isEmpty { statusCode = Int(raw[0]) }
+        if raw.count >= 3 { reserve = Int(raw[2]) }
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = PrimeTubingSuspendResponse(cargo: raw) }
+    public var accepted: Bool { statusCode == 0 }
+}
+
 /// Ack for set-max-bolus-limit (signed CONTROL). `SetMaxBolusLimitResponse` (op 0x87, 1B).
 public struct SetMaxBolusLimitResponse: ResponseMessage {
     public static let props = MessageProps(opCode: 0x87, size: 1, signed: true, type: .response, characteristic: .control)

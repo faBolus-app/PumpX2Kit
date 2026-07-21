@@ -168,6 +168,13 @@ import Testing
         #expect(m.bgSourceId == 0)
     }
 
+    /// PrimeTubingSuspendResponse: statusCode@0, reserve@2. Direct test — oracle can't build it.
+    @Test func primeTubingSuspendResponseOffsets() {
+        let m = PrimeTubingSuspendResponse(cargo: [0, 0, 0])
+        #expect(m.accepted && m.reserve == 0)
+        #expect(!PrimeTubingSuspendResponse(cargo: [2, 0, 0]).accepted)
+    }
+
     /// SetModesResponse: status@0. Direct test — upstream has only a byte[] constructor.
     @Test func setModesResponseOffsets() {
         #expect(SetModesResponse(cargo: [0]).accepted)
