@@ -51,6 +51,9 @@ public struct AlertStatusResponse: ResponseMessage {
     public var notifications: [PumpNotification] {
         NotificationBitmap.decode(bitmap, kind: .alert, names: Self.names)
     }
+    /// id → (title, detail) lookup. The history-log `AlertActivatedHistoryLog.alertId` shares this
+    /// numbering (upstream resolves it via AlertStatusResponse), so the Logbook can name events.
+    public static func name(for id: Int) -> (title: String, detail: String?)? { names[id] }
     // Named alerts (bit → title, detail). Unnamed bits render as "Alert N".
     static let names: [Int: (String, String?)] = [
         0: ("Low insulin", "Low amount of insulin remaining in the cartridge."),
@@ -98,6 +101,8 @@ public struct AlarmStatusResponse: ResponseMessage {
     public var notifications: [PumpNotification] {
         NotificationBitmap.decode(bitmap, kind: .alarm, names: Self.names)
     }
+    /// id → (title, detail) lookup, for naming `AlarmActivatedHistoryLog` events in the Logbook.
+    public static func name(for id: Int) -> (title: String, detail: String?)? { names[id] }
     static let names: [Int: (String, String?)] = [
         0: ("Cartridge", "Cartridge alarm."),
         1: ("Cartridge", "Cartridge alarm."),
@@ -128,6 +133,8 @@ public struct CGMAlertStatusResponse: ResponseMessage {
     public var notifications: [PumpNotification] {
         NotificationBitmap.decode(bitmap, kind: .cgmAlert, names: Self.names)
     }
+    /// id → (title, detail) lookup, for naming CGM-alert history-log events in the Logbook.
+    public static func name(for id: Int) -> (title: String, detail: String?)? { names[id] }
     // Real CGM alert bits (from pumpX2 CGMAlertStatusResponse.CGMAlert) — do not reorder.
     static let names: [Int: (String, String?)] = [
         1: ("Fixed low", "Glucose is at or below the fixed low threshold (urgent)."),
