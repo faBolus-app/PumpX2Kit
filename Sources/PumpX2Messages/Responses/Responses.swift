@@ -151,6 +151,28 @@ public struct StopTempRateResponse: ResponseMessage {
     public var accepted: Bool { status == 0 }
 }
 
+/// Ack for set-max-bolus-limit (signed CONTROL). `SetMaxBolusLimitResponse` (op 0x87, 1B).
+public struct SetMaxBolusLimitResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0x87, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = SetMaxBolusLimitResponse(cargo: raw) }
+    public var accepted: Bool { status == 0 }
+}
+
+/// Ack for set-max-basal-limit (signed CONTROL). `SetMaxBasalLimitResponse` (op 0x89, 1B).
+public struct SetMaxBasalLimitResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0x89, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = SetMaxBasalLimitResponse(cargo: raw) }
+    public var accepted: Bool { status == 0 }
+}
+
 /// Ack for set-low-insulin-alert (signed CONTROL). `SetLowInsulinAlertResponse` (op 0xDF, 1B).
 public struct SetLowInsulinAlertResponse: ResponseMessage {
     public static let props = MessageProps(opCode: 0xDF, size: 1, signed: true, type: .response, characteristic: .control)

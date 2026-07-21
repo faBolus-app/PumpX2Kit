@@ -304,6 +304,18 @@ struct OracleParityTests {
         #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
     }
 
+    @Test func setMaxBolusLimitRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("SetMaxBolusLimitRequest", txId: 22, json: "[25000]")
+        let swift = try swiftSignedPackets(SetMaxBolusLimitRequest(maxBolusMilliunits: 25000), txId: 22)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func setMaxBasalLimitRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("SetMaxBasalLimitRequest", txId: 23, json: "[15000]")
+        let swift = try swiftSignedPackets(SetMaxBasalLimitRequest(maxHourlyBasalMilliunits: 15000), txId: 23)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
     /// The crown jewel: a 1.0u standard bolus initiate, signed, byte-exact vs the oracle.
     @Test func initiateBolusRequestMatchesOracle() throws {
         // positional args: totalVolume, bolusID, bolusTypeBitmask, foodVolume,

@@ -245,6 +245,13 @@ import Testing
         #expect(msg.controlStateType == 1)
     }
 
+    @Test func limitsControlResponsesParse() throws {
+        let bolus = try OracleRunner.encode(txId: 50, messageName: "SetMaxBolusLimitResponse", json: "[0]").packets
+        #expect(try #require(try parse(bolus, on: .control).message as? SetMaxBolusLimitResponse).accepted)
+        let basal = try OracleRunner.encode(txId: 51, messageName: "SetMaxBasalLimitResponse", json: "[0]").packets
+        #expect(try #require(try parse(basal, on: .control).message as? SetMaxBasalLimitResponse).accepted)
+    }
+
     @Test func alertIdpControlResponsesParse() throws {
         // SetModesResponse is byte[]-only (oracle can't build it) — see ResponseDirectTests.
         let low = try OracleRunner.encode(txId: 44, messageName: "SetLowInsulinAlertResponse", json: "[0]").packets

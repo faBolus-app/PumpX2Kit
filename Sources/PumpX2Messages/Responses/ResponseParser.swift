@@ -105,6 +105,8 @@ public enum ResponseParser {
         add(PlaySoundResponse.self)
         add(SetPumpSoundsResponse.self)
         add(ChangeTimeDateResponse.self)
+        add(SetMaxBolusLimitResponse.self)
+        add(SetMaxBasalLimitResponse.self)
         add(SetLowInsulinAlertResponse.self)
         add(SetAutoOffAlertResponse.self)
         add(SetModesResponse.self)
