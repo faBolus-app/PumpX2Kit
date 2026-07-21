@@ -1151,3 +1151,351 @@ public struct InitiateBolusResponse: ResponseMessage {
     public mutating func parse(_ raw: [UInt8]) { self = InitiateBolusResponse(cargo: raw) }
     public var accepted: Bool { status == 0 }
 }
+
+// MARK: - A2 control-command acks (generated, oracle/direct-verified)
+
+/// Control response. Ported from ActivateShelfModeResponse.java (opcode raw -69).
+public struct ActivateShelfModeResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 187, size: 0, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 0 else { return }
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = ActivateShelfModeResponse(cargo: raw) }
+}
+
+/// Control response. Ported from AdditionalBolusResponse.java (opcode raw -5).
+public struct AdditionalBolusResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 251, size: 5, signed: true, type: .response, characteristic: .control, modifiesInsulinDelivery: true)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public private(set) var bolusId: Int = 0
+    public private(set) var reserve: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 5 else { return }
+        status = Int(raw[0])
+        bolusId = Bytes.readShort(raw, 1)
+        reserve = Bytes.readShort(raw, 3)
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = AdditionalBolusResponse(cargo: raw) }
+}
+
+/// Control response. Ported from CgmHighLowAlertResponse.java (opcode raw -61).
+public struct CgmHighLowAlertResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 195, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 1 else { return }
+        status = Int(raw[0])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = CgmHighLowAlertResponse(cargo: raw) }
+}
+
+/// Control response. Ported from CgmOutOfRangeAlertResponse.java (opcode raw -57).
+public struct CgmOutOfRangeAlertResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 199, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 1 else { return }
+        status = Int(raw[0])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = CgmOutOfRangeAlertResponse(cargo: raw) }
+}
+
+/// Control response. Ported from CgmRiseFallAlertResponse.java (opcode raw -59).
+public struct CgmRiseFallAlertResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 197, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 1 else { return }
+        status = Int(raw[0])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = CgmRiseFallAlertResponse(cargo: raw) }
+}
+
+/// Control response. Ported from ChangeControlIQSettingsResponse.java (opcode raw -53).
+public struct ChangeControlIQSettingsResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 203, size: 3, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 3 else { return }
+        status = Int(raw[0])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = ChangeControlIQSettingsResponse(cargo: raw) }
+}
+
+/// Control response. Ported from CreateIDPResponse.java (opcode raw -25).
+public struct CreateIDPResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 231, size: 2, signed: true, type: .response, characteristic: .control, modifiesInsulinDelivery: true)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public private(set) var newIdpId: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 2 else { return }
+        status = Int(raw[0])
+        newIdpId = Int(raw[1])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = CreateIDPResponse(cargo: raw) }
+}
+
+/// Control response. Ported from DeleteIDPResponse.java (opcode raw -81).
+public struct DeleteIDPResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 175, size: 2, signed: true, type: .response, characteristic: .control, modifiesInsulinDelivery: true)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public private(set) var deletedIdpId: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 2 else { return }
+        status = Int(raw[0])
+        deletedIdpId = Int(raw[1])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = DeleteIDPResponse(cargo: raw) }
+}
+
+/// Control response. Ported from DisconnectPumpResponse.java (opcode raw -65).
+public struct DisconnectPumpResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 191, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 1 else { return }
+        status = Int(raw[0])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = DisconnectPumpResponse(cargo: raw) }
+}
+
+/// Control response. Ported from FactoryResetBResponse.java.
+public struct FactoryResetBResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 125, size: 0, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 0 else { return }
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = FactoryResetBResponse(cargo: raw) }
+}
+
+/// Control response. Ported from FactoryResetResponse.java (opcode raw -23).
+public struct FactoryResetResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 233, size: 0, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 0 else { return }
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = FactoryResetResponse(cargo: raw) }
+}
+
+/// Control response. Ported from RenameIDPResponse.java (opcode raw -87).
+public struct RenameIDPResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 169, size: 2, signed: true, type: .response, characteristic: .control, modifiesInsulinDelivery: true)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public private(set) var numberOfProfiles: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 2 else { return }
+        status = Int(raw[0])
+        numberOfProfiles = Int(raw[1])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = RenameIDPResponse(cargo: raw) }
+}
+
+/// Control response. Ported from SendTipsControlGenericTestResponse.java.
+public struct SendTipsControlGenericTestResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 119, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 1 else { return }
+        status = Int(raw[0])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = SendTipsControlGenericTestResponse(cargo: raw) }
+}
+
+/// Control response. Ported from SetBgReminderResponse.java (opcode raw -39).
+public struct SetBgReminderResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 217, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 1 else { return }
+        status = Int(raw[0])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = SetBgReminderResponse(cargo: raw) }
+}
+
+/// Control response. Ported from SetG6TransmitterIdResponse.java (opcode raw -79).
+public struct SetG6TransmitterIdResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 177, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 1 else { return }
+        status = Int(raw[0])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = SetG6TransmitterIdResponse(cargo: raw) }
+}
+
+/// Control response. Ported from SetIDPSegmentResponse.java (opcode raw -85).
+public struct SetIDPSegmentResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 171, size: 2, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public private(set) var unknown: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 2 else { return }
+        status = Int(raw[0])
+        unknown = Int(raw[1])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = SetIDPSegmentResponse(cargo: raw) }
+}
+
+/// Control response. Ported from SetIDPSettingsResponse.java (opcode raw -83).
+public struct SetIDPSettingsResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 173, size: 2, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 2 else { return }
+        status = Int(raw[0])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = SetIDPSettingsResponse(cargo: raw) }
+}
+
+/// Control response. Ported from SetMissedMealBolusReminderResponse.java (opcode raw -37).
+public struct SetMissedMealBolusReminderResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 219, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 1 else { return }
+        status = Int(raw[0])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = SetMissedMealBolusReminderResponse(cargo: raw) }
+}
+
+/// Control response. Ported from SetPumpAlertSnoozeResponse.java (opcode raw -43).
+public struct SetPumpAlertSnoozeResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 213, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 1 else { return }
+        status = Int(raw[0])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = SetPumpAlertSnoozeResponse(cargo: raw) }
+}
+
+/// Control response. Ported from SetQuickBolusSettingsResponse.java (opcode raw -45).
+public struct SetQuickBolusSettingsResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 211, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 1 else { return }
+        status = Int(raw[0])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = SetQuickBolusSettingsResponse(cargo: raw) }
+}
+
+/// Control response. Ported from SetSiteChangeReminderResponse.java (opcode raw -35).
+public struct SetSiteChangeReminderResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 221, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 1 else { return }
+        status = Int(raw[0])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = SetSiteChangeReminderResponse(cargo: raw) }
+}
+
+/// Control response. Ported from SetSleepScheduleResponse.java (opcode raw -49).
+public struct SetSleepScheduleResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 207, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 1 else { return }
+        status = Int(raw[0])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = SetSleepScheduleResponse(cargo: raw) }
+}
+
+/// Control response. Ported from StreamDataPreflightResponse.java (opcode raw -125).
+public struct StreamDataPreflightResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 131, size: 3, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public private(set) var statusTypeId: Int = 0
+    public private(set) var streamTypeId: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 3 else { return }
+        status = Int(raw[0])
+        statusTypeId = Int(raw[1])
+        streamTypeId = Int(raw[2])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = StreamDataPreflightResponse(cargo: raw) }
+}
+
+/// Control response. Ported from UserInteractionResponse.java (opcode raw -123).
+public struct UserInteractionResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 133, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status: Int = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        guard raw.count >= 1 else { return }
+        status = Int(raw[0])
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = UserInteractionResponse(cargo: raw) }
+}

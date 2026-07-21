@@ -143,6 +143,9 @@ def parse_body_translate(text):
         s = line.strip()
         if not s or s.startswith("//"):
             continue
+        s = re.sub(r"\s*//.*$", "", s).strip()   # drop trailing inline comments
+        if not s:
+            continue
         if any(k in s for k in ("removeSignedRequestHmacBytes", "Validate", "this.cargo = raw",
                                  "parseBase(raw)", "new MinsTime", "getIdpStatus",
                                  "getBgSource", "= getBgSource")):

@@ -168,6 +168,26 @@ import Testing
         #expect(m.bgSourceId == 0)
     }
 
+    /// A2 control-ack responses: multi-field decode offsets (status@0 + extras), and dispatch of a
+    /// representative one through the characteristic-aware ResponseParser on .control.
+    @Test func a2ControlResponseOffsets() throws {
+        #expect(AdditionalBolusResponse(cargo: [0, 0x9A, 0x29, 0, 0]).status == 0)      // bolusId short@1
+        #expect(AdditionalBolusResponse(cargo: [0, 0x9A, 0x29, 0, 0]).bolusId == 10650)
+        #expect(CreateIDPResponse(cargo: [0, 5]).newIdpId == 5)
+        #expect(DeleteIDPResponse(cargo: [0, 4]).deletedIdpId == 4)
+        #expect(RenameIDPResponse(cargo: [0, 3]).numberOfProfiles == 3)
+        #expect(SetIDPSegmentResponse(cargo: [0, 1]).unknown == 1)
+        #expect(StreamDataPreflightResponse(cargo: [0, 2, 3]).streamTypeId == 3)
+        #expect(ChangeControlIQSettingsResponse(cargo: [0, 0, 0]).status == 0)
+        #expect(CgmHighLowAlertResponse(cargo: [0]).status == 0)
+
+        // Dispatch a signed CONTROL frame at AdditionalBolusResponse's opcode (0xFB) → correct type.
+        let payload: [UInt8] = [0, 0x9A, 0x29, 0, 0] + [UInt8](repeating: 0, count: 24)
+        let body: [UInt8] = [0xFB, 0x01, UInt8(payload.count)] + payload
+        let frame = body + Bytes.calculateCRC16(body)
+        #expect(try ResponseParser.parse(frame: frame, characteristic: .control).message is AdditionalBolusResponse)
+    }
+
     /// PrimeTubingSuspendResponse: statusCode@0, reserve@2. Direct test — oracle can't build it.
     @Test func primeTubingSuspendResponseOffsets() {
         let m = PrimeTubingSuspendResponse(cargo: [0, 0, 0])

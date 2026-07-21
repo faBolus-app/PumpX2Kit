@@ -337,6 +337,100 @@ struct OracleParityTests {
         #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
     }
 
+    // MARK: - A2 settings / IDP CRUD / dangerous — byte-exact signed request parity
+
+    @Test func cgmOutOfRangeAlertRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("CgmOutOfRangeAlertRequest", txId: 26, json: "[true, 20, 0]")
+        let swift = try swiftSignedPackets(CgmOutOfRangeAlertRequest(enable: true, alertDelay: 20, bitmask: 0), txId: 26)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func cgmRiseFallAlertRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("CgmRiseFallAlertRequest", txId: 27, json: "[1, true, 3, 0]")
+        let swift = try swiftSignedPackets(CgmRiseFallAlertRequest(alertType: 1, enable: true, mgPerDl: 3, bitmask: 0), txId: 27)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func changeControlIQSettingsRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("ChangeControlIQSettingsRequest", txId: 28, json: "[true, 150, 40]")
+        let swift = try swiftSignedPackets(ChangeControlIQSettingsRequest(enabled: true, weightLbs: 150, totalDailyInsulinUnits: 40), txId: 28)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func additionalBolusRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("AdditionalBolusRequest", txId: 29, json: "[10650, 0]")
+        let swift = try swiftSignedPackets(AdditionalBolusRequest(bolusID: 10650, reserve: 0), txId: 29)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func setSiteChangeReminderRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("SetSiteChangeReminderRequest", txId: 30, json: "[true, 3, 480, 0]")
+        let swift = try swiftSignedPackets(SetSiteChangeReminderRequest(enable: true, dayCount: 3, timeOfDayMinutes: 480, bitmask: 0), txId: 30)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func setPumpAlertSnoozeRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("SetPumpAlertSnoozeRequest", txId: 31, json: "[true, 30]")
+        let swift = try swiftSignedPackets(SetPumpAlertSnoozeRequest(snoozeEnabled: true, snoozeDurationMins: 30), txId: 31)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func deleteIDPRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("DeleteIDPRequest", txId: 32, json: "[4, 0]")
+        let swift = try swiftSignedPackets(DeleteIDPRequest(idpId: 4, profileIndex: 0), txId: 32)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func renameIDPRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("RenameIDPRequest", txId: 33, json: "[4, 0, \"Weekend\"]")
+        let swift = try swiftSignedPackets(RenameIDPRequest(idpId: 4, profileIndex: 0, profileName: "Weekend"), txId: 33)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    // SetIDPSettingsRequest's upstream ctor takes a ChangeType enum → oracle can't build it from an
+    // int; assert cargo directly. [idpId, profileIndex] + LE u16 duration + [carbEntry, changeTypeId].
+    @Test func setIDPSettingsRequestCargo() {
+        #expect(SetIDPSettingsRequest(idpId: 4, profileIndex: 0, profileInsulinDuration: 300,
+                                      profileCarbEntry: 1, changeTypeId: 0).cargo == [4, 0, 44, 1, 1, 0])
+    }
+
+    @Test func factoryResetRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("FactoryResetRequest", txId: 35, json: "[12345, 67890]")
+        let swift = try swiftSignedPackets(FactoryResetRequest(key: 12345, serialNumber: 67890), txId: 35)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func factoryResetBRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("FactoryResetBRequest", txId: 36, json: "[12345, 67890, false]")
+        let swift = try swiftSignedPackets(FactoryResetBRequest(key: 12345, serialNumber: 67890, enableShelfMode: false), txId: 36)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    static let emptyDangerous: [(String, Message)] = [
+        ("ActivateShelfModeRequest", ActivateShelfModeRequest()),
+        ("DisconnectPumpRequest", DisconnectPumpRequest()),
+        ("UserInteractionRequest", UserInteractionRequest()),
+    ]
+    @Test(arguments: emptyDangerous)
+    func emptyDangerousRequestMatchesOracle(name: String, message: Message) throws {
+        let oracle = try oracleSignedPackets(name, txId: 37)
+        let swift = try swiftSignedPackets(message, txId: 37)
+        #expect(swift == oracle, "\(name): swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func sendTipsControlGenericTestRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("SendTipsControlGenericTestRequest", txId: 38, json: "[1, 2, 3, 4, 5, 6]")
+        let swift = try swiftSignedPackets(SendTipsControlGenericTestRequest(param1: 1, param2: 2, param3: 3, param4: 4, param5: 5, param6: 6), txId: 38)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    /// byte[]-param requests are cargo-asserted directly (oracle reflection can't take opaque arrays).
+    @Test func opaqueArrayRequestCargos() {
+        #expect(SetQuickBolusSettingsRequest(enabled: true, modeRaw: 1, magic: [1, 2, 3, 4, 5]).cargo == [1, 1, 1, 2, 3, 4, 5])
+        #expect(SetSleepScheduleRequest(slot: 0, schedule: [1, 2, 3, 4, 5, 6], flag: 1).cargo == [0, 1, 2, 3, 4, 5, 6, 1])
+        #expect(StreamDataPreflightRequest(streamType: 2, length: 16, hmac: [9, 9]).cargo == [2, 16, 0, 9, 9])
+    }
+
     /// The crown jewel: a 1.0u standard bolus initiate, signed, byte-exact vs the oracle.
     @Test func initiateBolusRequestMatchesOracle() throws {
         // positional args: totalVolume, bolusID, bolusTypeBitmask, foodVolume,
