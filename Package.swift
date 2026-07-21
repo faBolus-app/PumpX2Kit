@@ -45,13 +45,13 @@ let package = Package(
 
         // Core Bluetooth central transport. Platform-agnostic (iOS + watchOS): imports
         // CoreBluetooth only, never UIKit. Built in Swift 5 language mode: this target is
-        // CoreBluetooth delegate glue whose non-Sendable CB objects are main-queue-confined,
-        // which the Swift 6 sending checker can't express without pervasive unsafe escapes. The
-        // @MainActor contract on PumpBLEClient/PumpBLEClientDelegate still holds for v6 callers.
+        // CoreBluetooth delegate glue. Builds in the package's Swift 6 language mode: CB's
+        // non-Sendable objects are main-queue-confined (the central uses `queue: .main`), so the
+        // delegates hop via `MainActor.assumeIsolated` and `@preconcurrency import CoreBluetooth`
+        // lets CB-typed callback params cross into the main-actor closures.
         .target(
             name: "PumpX2BLE",
-            dependencies: ["PumpX2Messages", "PumpX2Auth"],
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            dependencies: ["PumpX2Messages", "PumpX2Auth"]
         ),
 
         // Oracle/test CLI: connect → status → bolus → cancel.

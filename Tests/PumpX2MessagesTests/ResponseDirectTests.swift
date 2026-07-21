@@ -27,6 +27,20 @@ import Testing
         #expect(m.maxBolusAmount == 25000)
     }
 
+    /// TempRateStatusResponse: active/id/duration (offsets mirror upstream parse; oracle has no
+    /// field constructor so this is a direct test). active@0, tempRateId short@1, start u32@4,
+    /// secondsSincePumpReset u32@8, duration u32@12.
+    @Test func tempRateStatusOffsets() {
+        var cargo = [UInt8](repeating: 0, count: 16)
+        cargo[0] = 1  // active
+        let id = Bytes.firstTwoBytesLittleEndian(7); cargo[1] = id[0]; cargo[2] = id[1]
+        let dur = Bytes.toUint32(1800); for i in 0..<4 { cargo[12 + i] = dur[i] }
+        let m = TempRateStatusResponse(cargo: cargo)
+        #expect(m.active)
+        #expect(m.tempRateId == 7)
+        #expect(m.durationSeconds == 1800)
+    }
+
     /// HistoryLogStatusResponse: count + first/last sequence numbers (uint32 LE @0/4/8).
     @Test func historyLogStatusOffsets() {
         var cargo = [UInt8](repeating: 0, count: 12)
@@ -116,6 +130,136 @@ import Testing
         #expect(DismissNotificationRequest.props.characteristic == .control)
         let alarm = DismissNotificationRequest(kind: .alarm, notificationId: 2, executeExtraAction: true)
         #expect(alarm.cargo == [2, 0, 0, 0, 2, 1])
+    }
+
+    /// PumpFeaturesV1Response: uint64 feature bitmask @0. Direct test — upstream constructor takes a
+    /// BigInteger the oracle's reflection can't build. Sets Control-IQ (1024) + G6 (2) + BLE pump
+    /// control (268435456) bits.
+    @Test func pumpFeaturesV1Bitmask() {
+        let bits: UInt64 = 1024 | 2 | 268_435_456
+        let m = PumpFeaturesV1Response(cargo: Bytes.toUint64(bits))
+        #expect(m.featureBitmask == bits)
+        #expect(m.controlIQSupported)
+        #expect(m.dexcomG6Supported)
+        #expect(m.blePumpControlSupported)
+        #expect(!m.basalIQSupported)
+        #expect(!m.controlIQProSupported)
+    }
+
+    /// LoadStatusResponse: isLoadingActive@0, loadStateId@1, primeStatusId@2. Direct test — upstream
+    /// has multiple overlapping constructors that make oracle reflection ambiguous.
+    @Test func loadStatusOffsets() {
+        let m = LoadStatusResponse(cargo: [1, 3, 2])
+        #expect(m.isLoadingActive)
+        #expect(m.loadStateId == 3)
+        #expect(m.primeStatusId == 2)
+        #expect(!LoadStatusResponse(cargo: [0, 0, 0]).isLoadingActive)
+    }
+
+    /// LastBGResponse: bgTimestamp u32@0, bgValue short@4, bgSourceId@6. Direct test because the
+    /// oracle can't deterministically construct it (two ambiguous 3-arg constructors upstream).
+    @Test func lastBGResponseOffsets() {
+        var cargo = [UInt8](repeating: 0, count: 7)
+        let ts = Bytes.toUint32(461_589_432); for i in 0..<4 { cargo[i] = ts[i] }
+        let bg = Bytes.firstTwoBytesLittleEndian(142); cargo[4] = bg[0]; cargo[5] = bg[1]
+        cargo[6] = 0  // MANUAL
+        let m = LastBGResponse(cargo: cargo)
+        #expect(m.bgValue == 142)
+        #expect(m.bgSourceId == 0)
+    }
+
+    /// ErrorResponse: requestCodeId@0 (failing opcode), errorCodeId@1. Direct test — upstream uses an
+    /// ErrorCode enum ctor the oracle reflection can't build from ints.
+    @Test func errorResponseOffsets() {
+        let m = ErrorResponse(cargo: [159, 3])
+        #expect(m.requestCodeId == 159 && m.errorCodeId == 3 && m.isInvalidParameter)
+    }
+
+    /// CONTROL_STREAM state responses (A3): dispatch on .controlStream + offsets. Also exercises the
+    /// characteristic-aware parser for opcodes that only exist on CONTROL_STREAM.
+    @Test func controlStreamStateResponses() throws {
+        func frame(_ op: UInt8, _ cargo: [UInt8]) -> [UInt8] {
+            let body: [UInt8] = [op, 0x01, UInt8(cargo.count)] + cargo
+            return body + Bytes.calculateCRC16(body)
+        }
+        // Detecting cartridge (0xE3): percentComplete short@0
+        let det = try ResponseParser.parse(frame: frame(0xE3, [50, 0]), characteristic: .controlStream)
+        #expect((det.message as? DetectingCartridgeStateStreamResponse)?.percentComplete == 50)
+        // Fill cannula (0xE7): stateId@0
+        let fc = try ResponseParser.parse(frame: frame(0xE7, [3]), characteristic: .controlStream)
+        #expect((fc.message as? FillCannulaStateStreamResponse)?.stateId == 3)
+        // Exit-fill-tubing (0xE9): representative for the -23 group
+        let ex = try ResponseParser.parse(frame: frame(0xE9, [1]), characteristic: .controlStream)
+        #expect(ex.message is ExitFillTubingModeStateStreamResponse)
+    }
+
+    /// A2 control-ack responses: multi-field decode offsets (status@0 + extras), and dispatch of a
+    /// representative one through the characteristic-aware ResponseParser on .control.
+    @Test func a2ControlResponseOffsets() throws {
+        #expect(AdditionalBolusResponse(cargo: [0, 0x9A, 0x29, 0, 0]).status == 0)      // bolusId short@1
+        #expect(AdditionalBolusResponse(cargo: [0, 0x9A, 0x29, 0, 0]).bolusId == 10650)
+        #expect(CreateIDPResponse(cargo: [0, 5]).newIdpId == 5)
+        #expect(DeleteIDPResponse(cargo: [0, 4]).deletedIdpId == 4)
+        #expect(RenameIDPResponse(cargo: [0, 3]).numberOfProfiles == 3)
+        #expect(SetIDPSegmentResponse(cargo: [0, 1]).unknown == 1)
+        #expect(StreamDataPreflightResponse(cargo: [0, 2, 3]).streamTypeId == 3)
+        #expect(ChangeControlIQSettingsResponse(cargo: [0, 0, 0]).status == 0)
+        #expect(CgmHighLowAlertResponse(cargo: [0]).status == 0)
+
+        // Dispatch a signed CONTROL frame at AdditionalBolusResponse's opcode (0xFB) → correct type.
+        let payload: [UInt8] = [0, 0x9A, 0x29, 0, 0] + [UInt8](repeating: 0, count: 24)
+        let body: [UInt8] = [0xFB, 0x01, UInt8(payload.count)] + payload
+        let frame = body + Bytes.calculateCRC16(body)
+        #expect(try ResponseParser.parse(frame: frame, characteristic: .control).message is AdditionalBolusResponse)
+    }
+
+    /// PrimeTubingSuspendResponse: statusCode@0, reserve@2. Direct test — oracle can't build it.
+    @Test func primeTubingSuspendResponseOffsets() {
+        let m = PrimeTubingSuspendResponse(cargo: [0, 0, 0])
+        #expect(m.accepted && m.reserve == 0)
+        #expect(!PrimeTubingSuspendResponse(cargo: [2, 0, 0]).accepted)
+    }
+
+    /// SetModesResponse: status@0. Direct test — upstream has only a byte[] constructor.
+    @Test func setModesResponseOffsets() {
+        #expect(SetModesResponse(cargo: [0]).accepted)
+        #expect(!SetModesResponse(cargo: [3]).accepted)
+    }
+
+    /// PlaySoundResponse: status@0. Direct test — upstream has only a byte[] constructor, so the
+    /// oracle's reflection encoder can't build it from a JSON int.
+    @Test func playSoundResponseOffsets() {
+        #expect(PlaySoundResponse(cargo: [0]).accepted)
+        #expect(!PlaySoundResponse(cargo: [1]).accepted)
+    }
+
+    /// SetTempRate / StopTempRate response offsets: status@0, tempRateId short@1. The oracle's own
+    /// `SetTempRateResponse(int,int)` constructor is broken upstream (declares size=4 but buildCargo
+    /// emits 3 bytes → Validate throws), so this is a direct offset test.
+    @Test func tempRateResponseOffsets() {
+        let set = SetTempRateResponse(cargo: [0x00, 0x05, 0x00, 0x00])
+        #expect(set.accepted && set.tempRateId == 5)
+        let stop = StopTempRateResponse(cargo: [0x00, 0x07, 0x00])
+        #expect(stop.accepted && stop.tempRateId == 7)
+        // Non-zero status = rejected.
+        #expect(!SetTempRateResponse(cargo: [0x02, 0x00, 0x00, 0x00]).accepted)
+    }
+
+    /// The reason ResponseParser is characteristic-keyed: opcode 165 is `SetTempRateResponse` on
+    /// CONTROL but `LastBolusStatusV2Response` on CURRENT_STATUS. Dispatch a hand-built signed
+    /// CONTROL frame at opcode 165 and confirm it resolves to SetTempRateResponse, not the
+    /// currentStatus type sharing that opcode.
+    @Test func opcodeCollisionResolvesByCharacteristic() throws {
+        #expect(SetTempRateResponse.props.opCode == LastBolusStatusV2Response.props.opCode)
+        // Signed frame: cargo (4B) + 24B zero HMAC; length covers both.
+        let cargo: [UInt8] = [0x00, 0x05, 0x00, 0x00]
+        let payload = cargo + [UInt8](repeating: 0, count: 24)
+        let body: [UInt8] = [0xA5, 0x01, UInt8(payload.count)] + payload
+        let frame = body + Bytes.calculateCRC16(body)
+        let parsed = try ResponseParser.parse(frame: frame, characteristic: .control)
+        #expect(parsed.message is SetTempRateResponse)
+        let set = try #require(parsed.message as? SetTempRateResponse)
+        #expect(set.accepted && set.tempRateId == 5)
     }
 
     /// EGV V2 parses a 9-byte cargo (Control-IQ+ firmware appends a trailing byte); a VALID

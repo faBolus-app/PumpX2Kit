@@ -1,5 +1,5 @@
 import Foundation
-import CoreBluetooth
+@preconcurrency import CoreBluetooth
 import PumpX2Messages
 
 /// Events emitted by `PumpBLEClient`, delivered on the main actor.
@@ -197,21 +197,22 @@ extension PumpBLEClient: CBCentralManagerDelegate {
     }
 
     /// State restoration: iOS relaunched us (e.g. after termination) with the pump connection
-    /// preserved. Re-adopt the restored peripheral so notifications/reconnect resume without a
-    /// fresh scan. Discovery/subscription continues via the normal delegate callbacks.
+    /// preserved. Re-adopt the restored pump so notifications/reconnect resume without a fresh scan.
+    ///
+    /// We re-find it via `central.retrieveConnectedPeripherals` rather than reading the restored-
+    /// state `dict`: `[String: Any]` is non-Sendable and can't be sent into the main-actor closure
+    /// under Swift 6. A restore that was still mid-connection isn't "connected" yet, so it won't be
+    /// returned here — but its pending connect persists across restoration and completes via
+    /// `didConnect` (which adopts the peripheral). Discovery/subscription continue as normal.
     public nonisolated func centralManager(_ central: CBCentralManager,
                                            willRestoreState dict: [String: Any]) {
         MainActor.assumeIsolated {
-            let restored = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral]
-            guard let p = restored?.first else { return }
+            let pumpUUID = CBUUID(nsuuid: ServiceUUID.pumpService)
+            guard let p = central.retrieveConnectedPeripherals(withServices: [pumpUUID]).first else { return }
             self.peripheral = p
             p.delegate = self
-            state = (p.state == .connected) ? .discovering : .connecting
-            if p.state == .connected {
-                p.discoverServices([CBUUID(nsuuid: ServiceUUID.pumpService)])
-            } else {
-                central.connect(p)
-            }
+            state = .discovering
+            p.discoverServices([pumpUUID])
         }
     }
 
@@ -222,6 +223,10 @@ extension PumpBLEClient: CBCentralManagerDelegate {
 
     public nonisolated func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         MainActor.assumeIsolated {
+            // Adopt the peripheral (idempotent in the normal flow where connect() already set it;
+            // also covers a connect that completed after state restoration).
+            self.peripheral = peripheral
+            peripheral.delegate = self
             state = .discovering
             peripheral.discoverServices([CBUUID(nsuuid: ServiceUUID.pumpService)])
         }

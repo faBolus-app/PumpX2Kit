@@ -95,6 +95,27 @@ enum OracleRunner {
         try encode(txId: txId, messageName: messageName, json: json).packets
     }
 
+    struct HistoryLogParse { let typeId: Int; let className: String; let description: String }
+
+    /// Runs `cliparser historylog <hex>` — decodes a 26-byte history-log record and returns the
+    /// upstream typeId + class short-name (+ toString). History logs are decode-only, so this gives
+    /// byte-exact **decode** parity: feed the same bytes to Swift `HistoryLogParser` and compare.
+    static func parseHistoryLog(hex: String) throws -> HistoryLogParse {
+        guard isAvailable else { throw OracleError.unavailable("jar=\(jarPath) java=\(javaPath)") }
+        let (out, err, status) = try run(["-jar", jarPath, "historylog", hex])
+        guard status == 0 else { throw OracleError.failed("exit \(status): \(err)") }
+        guard let line = out.split(separator: "\n").last(where: { $0.contains("\t") }) else {
+            throw OracleError.failed("no tab-delimited output: \(out)\n\(err)")
+        }
+        let parts = line.components(separatedBy: "\t")
+        guard parts.count >= 2, let tid = Int(parts[0]) else {
+            throw OracleError.failed("unparseable historylog line: \(line)")
+        }
+        let shortName = parts[1].components(separatedBy: ".").last ?? parts[1]
+        return HistoryLogParse(typeId: tid, className: shortName,
+                               description: parts.count >= 4 ? parts[3] : "")
+    }
+
     private static func run(_ args: [String], extraEnv: [String: String] = [:]) throws
         -> (out: String, err: String, status: Int32) {
         let proc = Process()
