@@ -245,6 +245,13 @@ import Testing
         #expect(msg.controlStateType == 1)
     }
 
+    @Test func remoteEntryControlResponsesParse() throws {
+        let carb = try OracleRunner.encode(txId: 39, messageName: "RemoteCarbEntryResponse", json: "[0]").packets
+        #expect(try #require(try parse(carb, on: .control).message as? RemoteCarbEntryResponse).accepted)
+        let bg = try OracleRunner.encode(txId: 40, messageName: "RemoteBgEntryResponse", json: "[0]").packets
+        #expect(try #require(try parse(bg, on: .control).message as? RemoteBgEntryResponse).accepted)
+    }
+
     @Test func cgmSessionControlResponsesParse() throws {
         let start = try OracleRunner.encode(txId: 35, messageName: "StartDexcomG6SensorSessionResponse", json: "[0]").packets
         #expect(try #require(try parse(start, on: .control).message as? StartDexcomG6SensorSessionResponse).accepted)

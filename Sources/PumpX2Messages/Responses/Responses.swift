@@ -151,6 +151,28 @@ public struct StopTempRateResponse: ResponseMessage {
     public var accepted: Bool { status == 0 }
 }
 
+/// Ack for a remote carb entry (signed CONTROL). `RemoteCarbEntryResponse` (op 0xF3, 1B).
+public struct RemoteCarbEntryResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0xF3, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = RemoteCarbEntryResponse(cargo: raw) }
+    public var accepted: Bool { status == 0 }
+}
+
+/// Ack for a remote BG entry (signed CONTROL). `RemoteBgEntryResponse` (op 0xB7, 1B).
+public struct RemoteBgEntryResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0xB7, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = RemoteBgEntryResponse(cargo: raw) }
+    public var accepted: Bool { status == 0 }
+}
+
 /// Ack for start-G6-sensor-session (signed CONTROL). `StartDexcomG6SensorSessionResponse` (op 0xB3, 1B).
 public struct StartDexcomG6SensorSessionResponse: ResponseMessage {
     public static let props = MessageProps(opCode: 0xB3, size: 1, signed: true, type: .response, characteristic: .control)
