@@ -151,6 +151,56 @@ public struct StopTempRateResponse: ResponseMessage {
     public var accepted: Bool { status == 0 }
 }
 
+/// Ack for start-G6-sensor-session (signed CONTROL). `StartDexcomG6SensorSessionResponse` (op 0xB3, 1B).
+public struct StartDexcomG6SensorSessionResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0xB3, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = StartDexcomG6SensorSessionResponse(cargo: raw) }
+    public var accepted: Bool { status == 0 }
+}
+
+/// Ack for stop-CGM-sensor-session (signed CONTROL). `StopDexcomCGMSensorSessionResponse` (op 0xB5, 1B).
+public struct StopDexcomCGMSensorSessionResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0xB5, size: 1, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = StopDexcomCGMSensorSessionResponse(cargo: raw) }
+    public var accepted: Bool { status == 0 }
+}
+
+/// Ack for set-sensor-type (signed CONTROL). `SetSensorTypeResponse` (op 0xC1, 2B).
+/// status@0, statusAcknowledgement@1.
+public struct SetSensorTypeResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0xC1, size: 2, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public private(set) var statusAcknowledgement = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) {
+        cargo = raw
+        if !raw.isEmpty { status = Int(raw[0]) }
+        if raw.count >= 2 { statusAcknowledgement = Int(raw[1]) }
+    }
+    public mutating func parse(_ raw: [UInt8]) { self = SetSensorTypeResponse(cargo: raw) }
+    public var accepted: Bool { status == 0 }
+}
+
+/// Ack for set-G7-pairing-code (signed CONTROL). `SetDexcomG7PairingCodeResponse` (op 0xFD, 2B).
+public struct SetDexcomG7PairingCodeResponse: ResponseMessage {
+    public static let props = MessageProps(opCode: 0xFD, size: 2, signed: true, type: .response, characteristic: .control)
+    public var cargo: [UInt8]
+    public private(set) var status = 0
+    public init() { cargo = [] }
+    public init(cargo raw: [UInt8]) { cargo = raw; if !raw.isEmpty { status = Int(raw[0]) } }
+    public mutating func parse(_ raw: [UInt8]) { self = SetDexcomG7PairingCodeResponse(cargo: raw) }
+    public var accepted: Bool { status == 0 }
+}
+
 /// Ack for a cancel-bolus command (a.k.a. BolusTermination) — signed.
 /// `response/control/CancelBolusResponse` (op 0xA1, 5B). statusId@0, bolusId short@1, reasonId@3.
 public struct CancelBolusResponse: ResponseMessage {

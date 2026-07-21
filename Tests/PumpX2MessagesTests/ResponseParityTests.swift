@@ -245,6 +245,18 @@ import Testing
         #expect(msg.controlStateType == 1)
     }
 
+    @Test func cgmSessionControlResponsesParse() throws {
+        let start = try OracleRunner.encode(txId: 35, messageName: "StartDexcomG6SensorSessionResponse", json: "[0]").packets
+        #expect(try #require(try parse(start, on: .control).message as? StartDexcomG6SensorSessionResponse).accepted)
+        let stop = try OracleRunner.encode(txId: 36, messageName: "StopDexcomCGMSensorSessionResponse", json: "[0]").packets
+        #expect(try #require(try parse(stop, on: .control).message as? StopDexcomCGMSensorSessionResponse).accepted)
+        let sensor = try OracleRunner.encode(txId: 37, messageName: "SetSensorTypeResponse", json: "[0, 1]").packets
+        let sm = try #require(try parse(sensor, on: .control).message as? SetSensorTypeResponse)
+        #expect(sm.accepted && sm.statusAcknowledgement == 1)
+        let g7 = try OracleRunner.encode(txId: 38, messageName: "SetDexcomG7PairingCodeResponse", json: "[0]").packets
+        #expect(try #require(try parse(g7, on: .control).message as? SetDexcomG7PairingCodeResponse).accepted)
+    }
+
     @Test func currentBatteryV1ResponseParses() throws {
         let packets = try OracleRunner.encode(
             txId: 13, messageName: "CurrentBatteryV1Response", json: "[50, 78]").packets

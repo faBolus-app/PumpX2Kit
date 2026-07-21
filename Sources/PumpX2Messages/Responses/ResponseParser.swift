@@ -100,6 +100,10 @@ public enum ResponseParser {
         add(StopTempRateResponse.self)
         add(CancelBolusResponse.self)
         add(BolusPermissionReleaseResponse.self)
+        add(StartDexcomG6SensorSessionResponse.self)
+        add(StopDexcomCGMSensorSessionResponse.self)
+        add(SetSensorTypeResponse.self)
+        add(SetDexcomG7PairingCodeResponse.self)
         return r
     }()
 

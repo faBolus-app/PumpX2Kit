@@ -214,6 +214,30 @@ struct OracleParityTests {
         #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
     }
 
+    @Test func startG6SensorSessionRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("StartDexcomG6SensorSessionRequest", txId: 9, json: "[1234]")
+        let swift = try swiftSignedPackets(StartDexcomG6SensorSessionRequest(sensorCode: 1234), txId: 9)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func stopCGMSensorSessionRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("StopDexcomCGMSensorSessionRequest", txId: 10)
+        let swift = try swiftSignedPackets(StopDexcomCGMSensorSessionRequest(), txId: 10)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func setSensorTypeRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("SetSensorTypeRequest", txId: 11, json: "[2]")
+        let swift = try swiftSignedPackets(SetSensorTypeRequest(cgmSensorType: 2), txId: 11)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    @Test func setG7PairingCodeRequestMatchesOracle() throws {
+        let oracle = try oracleSignedPackets("SetDexcomG7PairingCodeRequest", txId: 12, json: "[9876]")
+        let swift = try swiftSignedPackets(SetDexcomG7PairingCodeRequest(pairingCode: 9876), txId: 12)
+        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
     /// The crown jewel: a 1.0u standard bolus initiate, signed, byte-exact vs the oracle.
     @Test func initiateBolusRequestMatchesOracle() throws {
         // positional args: totalVolume, bolusID, bolusTypeBitmask, foodVolume,
