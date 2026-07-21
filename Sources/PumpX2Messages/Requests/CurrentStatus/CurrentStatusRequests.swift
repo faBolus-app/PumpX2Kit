@@ -181,3 +181,74 @@ public struct CGMHardwareInfoRequest: EmptyCurrentStatusRequest {
     public var cargo: [UInt8] = []
     public init(emptyCargo: Void = ()) { self.cargo = [] }
 }
+
+// Remaining empty-cargo reads (software info, Basal-IQ, CGM alert-settings reads, misc).
+public struct CurrentBatteryV1Request: EmptyCurrentStatusRequest {
+    public static let props = statusProps(52); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct CurrentEGVGuiDataRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(34); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct ExtendedBolusStatusRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(46); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct LastBolusStatusRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(48); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct LastBolusStatusV3Request: EmptyCurrentStatusRequest {
+    public static let props = statusProps(0xBA); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct TempRateRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(42); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct TempRateStatusRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(30); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct RemindersRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(88); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct ControlIQSleepScheduleRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(106); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct BasalIQStatusRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(112); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct BasalIQSettingsRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(98); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct BasalIQAlertInfoRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(102); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct CGMGlucoseAlertSettingsRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(90); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct CGMRateAlertSettingsRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(92); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct CGMOORAlertSettingsRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(94); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct BleSoftwareInfoRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(0x88); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct GetG6TransmitterHardwareInfoRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(0xC4); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct GetSavedG7PairingCodeRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(116); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct HighestAamRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(120); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct LocalizationRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(0xA6); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct PumpVersionBRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(0x84); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct SecretMenuRequest: EmptyCurrentStatusRequest {
+    public static let props = statusProps(0xBC); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}
+public struct UnknownMobiOpcode110Request: EmptyCurrentStatusRequest {
+    public static let props = statusProps(110); public var cargo: [UInt8] = []; public init(emptyCargo: Void = ()) { cargo = [] }
+}

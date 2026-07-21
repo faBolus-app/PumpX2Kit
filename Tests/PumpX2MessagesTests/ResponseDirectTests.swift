@@ -168,6 +168,24 @@ import Testing
         #expect(m.bgSourceId == 0)
     }
 
+    /// CONTROL_STREAM state responses (A3): dispatch on .controlStream + offsets. Also exercises the
+    /// characteristic-aware parser for opcodes that only exist on CONTROL_STREAM.
+    @Test func controlStreamStateResponses() throws {
+        func frame(_ op: UInt8, _ cargo: [UInt8]) -> [UInt8] {
+            let body: [UInt8] = [op, 0x01, UInt8(cargo.count)] + cargo
+            return body + Bytes.calculateCRC16(body)
+        }
+        // Detecting cartridge (0xE3): percentComplete short@0
+        let det = try ResponseParser.parse(frame: frame(0xE3, [50, 0]), characteristic: .controlStream)
+        #expect((det.message as? DetectingCartridgeStateStreamResponse)?.percentComplete == 50)
+        // Fill cannula (0xE7): stateId@0
+        let fc = try ResponseParser.parse(frame: frame(0xE7, [3]), characteristic: .controlStream)
+        #expect((fc.message as? FillCannulaStateStreamResponse)?.stateId == 3)
+        // Exit-fill-tubing (0xE9): representative for the -23 group
+        let ex = try ResponseParser.parse(frame: frame(0xE9, [1]), characteristic: .controlStream)
+        #expect(ex.message is ExitFillTubingModeStateStreamResponse)
+    }
+
     /// A2 control-ack responses: multi-field decode offsets (status@0 + extras), and dispatch of a
     /// representative one through the characteristic-aware ResponseParser on .control.
     @Test func a2ControlResponseOffsets() throws {

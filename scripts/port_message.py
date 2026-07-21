@@ -99,8 +99,11 @@ def parse_props(text):
 def translate_expr(expr):
     """Translate a Java RHS expression to Swift + infer the Swift field type."""
     e = expr.strip()
-    # bool: raw[N] != 0
+    # bool: raw[N] != 0  or  raw[N] & 0xFF != 0
     m = re.fullmatch(r"raw\[(\d+)\]\s*!=\s*0", e)
+    if m:
+        return f"raw[{m.group(1)}] != 0", "Bool", "false"
+    m = re.fullmatch(r"\(?raw\[(\d+)\]\s*&\s*0x[0-9A-Fa-f]+\)?\s*!=\s*0", e)
     if m:
         return f"raw[{m.group(1)}] != 0", "Bool", "false"
     # int: raw[N] & 0xFF   or   raw[N]

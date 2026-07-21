@@ -59,6 +59,29 @@ struct OracleParityTests {
         ("ControlIQInfoV1Request", ControlIQInfoV1Request()),
         ("PumpFeaturesV1Request", PumpFeaturesV1Request()),
         ("LoadStatusRequest", LoadStatusRequest()),
+        ("CurrentBatteryV1Request", CurrentBatteryV1Request()),
+        ("CurrentEGVGuiDataRequest", CurrentEGVGuiDataRequest()),
+        ("ExtendedBolusStatusRequest", ExtendedBolusStatusRequest()),
+        ("LastBolusStatusRequest", LastBolusStatusRequest()),
+        ("LastBolusStatusV3Request", LastBolusStatusV3Request()),
+        ("TempRateRequest", TempRateRequest()),
+        ("TempRateStatusRequest", TempRateStatusRequest()),
+        ("RemindersRequest", RemindersRequest()),
+        ("ControlIQSleepScheduleRequest", ControlIQSleepScheduleRequest()),
+        ("BasalIQStatusRequest", BasalIQStatusRequest()),
+        ("BasalIQSettingsRequest", BasalIQSettingsRequest()),
+        ("BasalIQAlertInfoRequest", BasalIQAlertInfoRequest()),
+        ("CGMGlucoseAlertSettingsRequest", CGMGlucoseAlertSettingsRequest()),
+        ("CGMRateAlertSettingsRequest", CGMRateAlertSettingsRequest()),
+        ("CGMOORAlertSettingsRequest", CGMOORAlertSettingsRequest()),
+        ("BleSoftwareInfoRequest", BleSoftwareInfoRequest()),
+        ("GetG6TransmitterHardwareInfoRequest", GetG6TransmitterHardwareInfoRequest()),
+        ("GetSavedG7PairingCodeRequest", GetSavedG7PairingCodeRequest()),
+        ("HighestAamRequest", HighestAamRequest()),
+        ("LocalizationRequest", LocalizationRequest()),
+        ("PumpVersionBRequest", PumpVersionBRequest()),
+        ("SecretMenuRequest", SecretMenuRequest()),
+        ("UnknownMobiOpcode110Request", UnknownMobiOpcode110Request()),
         ("ExtendedBolusStatusV2Request", ExtendedBolusStatusV2Request()),
         ("CGMStatusRequest", CGMStatusRequest()),
         ("CgmStatusV2Request", CgmStatusV2Request()),
@@ -273,10 +296,11 @@ struct OracleParityTests {
         #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
     }
 
-    @Test func changeTimeDateRequestMatchesOracle() throws {
-        let oracle = try oracleSignedPackets("ChangeTimeDateRequest", txId: 17, json: "[461500000]")
-        let swift = try swiftSignedPackets(ChangeTimeDateRequest(tandemEpochTime: 461_500_000), txId: 17)
-        #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    // ChangeTimeDate / CgmSupportPackageStatus are cargo-asserted: upstream has multiple/ enum ctors
+    // (long/Instant/byte[]; DeviceType) that make the oracle's reflection encoder nondeterministic.
+    @Test func changeTimeDateAndCgmSupportCargos() {
+        #expect(ChangeTimeDateRequest(tandemEpochTime: 461_500_000).cargo == [96, 238, 129, 27])
+        #expect(CgmSupportPackageStatusRequest(deviceType: 1).cargo == [1])
     }
 
     @Test func setLowInsulinAlertRequestMatchesOracle() throws {
@@ -422,6 +446,17 @@ struct OracleParityTests {
         let oracle = try oracleSignedPackets("SendTipsControlGenericTestRequest", txId: 38, json: "[1, 2, 3, 4, 5, 6]")
         let swift = try swiftSignedPackets(SendTipsControlGenericTestRequest(param1: 1, param2: 2, param3: 3, param4: 4, param5: 5, param6: 6), txId: 38)
         #expect(swift == oracle, "swift=\(swift) oracle=\(oracle)")
+    }
+
+    // Parameterized CURRENT_STATUS reads — cargo-asserted directly. Several have enum constructors
+    // (DeviceType, mcuType, SupportedFeatureIndex) that make the oracle's reflection encoder
+    // nondeterministically ClassCast-fail; the packetize framing is covered by the signed/empty tests.
+    @Test func paramStatusReadCargos() {
+        #expect(BolusPermissionChangeReasonRequest(bolusId: 10650).cargo == [154, 41])   // LE 0x299A
+        #expect(CommonSoftwareInfoRequest(mcuType: 0).cargo == [0])
+        #expect(CreateHistoryLogRequest(numberOfLogs: 100).cargo == [100, 0, 0, 0])
+        #expect(StreamDataReadinessRequest(streamDataType: 1).cargo == [1])
+        #expect(PumpFeaturesV2Request(input: 2).cargo == [2])
     }
 
     /// byte[]-param requests are cargo-asserted directly (oracle reflection can't take opaque arrays).
