@@ -97,11 +97,14 @@ private func record(typeId: Int, pumpTimeSec: UInt32, seq: UInt32, tail: [UInt8]
     }
 }
 
-/// History-log types present in references/pumpx2@dad3eea but NOT decodable by the *vendored*
-/// oracle JAR (an older cliparser build that predates these types / uses stale typeId mappings).
-/// They can't be oracle-cross-checked here, so we verify Swift-side dispatch only; their field
-/// offsets are faithful verbatim ports of the current upstream parse(). Rebuild the vendored JAR
-/// from dad3eea to promote these into HistoryLogOracleParityTests.
+/// History-log types the oracle can't cross-check — NOT a stale-JAR problem (the vendored jar was
+/// verified byte-identical to a fresh dad3eea build). Every typeId here is in 128–255, and upstream
+/// `HistoryLog.parseBase` reads the typeId from a signed byte and adds 512 for negative values,
+/// mis-decoding this whole range: most read as "unknown", and a couple collide with other types
+/// (230→486, 191→447). Our Swift reads the typeId as a clean unsigned 12-bit value, so it's actually
+/// *more* correct than the reference — which is why these can only be Swift-dispatch-verified here.
+/// Promoting them to byte-exact parity needs an UPSTREAM parse() fix in a newer pumpx2 + a re-pin,
+/// not a jar rebuild.
 @Suite struct HistoryLogSwiftDispatchTests {
     static let cases: [(Int, String)] = [
         (171, "CgmAlertActivatedHistoryLog"),
