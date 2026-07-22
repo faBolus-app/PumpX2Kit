@@ -1,0 +1,41 @@
+# PumpX2Kit — LLM guide
+
+> A Swift port of the Tandem t:slim X2 / Mobi Bluetooth protocol (from jwoglom's pumpX2), used by the
+> faBolus app. It builds pump messages, runs the JPAKE pairing/auth, and speaks BLE — and is verified
+> **byte-exact** against a vendored Java "oracle". Safety-critical: a wrong byte can misdose insulin.
+> This file orients an LLM adding a message, fixing parsing, or debugging pairing.
+
+## The golden rule: parity with the oracle
+- `vendor/pumpx2-oracle/` — the reference Java implementation + its test vectors. Every request's bytes
+  and every response's parse are asserted equal to the oracle. **Never change message bytes without a
+  matching oracle-parity test.** See `Tests/PumpX2MessagesTests/` (e.g. `OracleParityTests`,
+  `ResponseParityTests`, `InitiateBolusExtendedTests`).
+- Run tests: `./scripts/test.sh` (needs **JDK 21** for the oracle). Swift-only tests:
+  `swift test --filter <Name>`.
+
+## Products (SPM targets)
+- `Sources/PumpX2Messages/` — request/response message types + framing. `Requests/…`,
+  `Responses/Responses.swift`, `Core/MessageProps.swift` (per-message `signed`, `characteristic`,
+  `modifiesInsulinDelivery`, opcode, size). `ResponseParser` dispatches on **(characteristic, opcode)**
+  — opcodes are NOT globally unique (see the `tandem-opcode-collision` note).
+- `Sources/PumpX2Auth/` — `PairingCoordinator` (client-initiated JPAKE state machine), `JpakeAuth`/
+  `EcJpakeContext` (EC-JPAKE over vendored mbedTLS), `Crypto` (HMAC/HKDF). Derives the long-term
+  secret + per-command signing key.
+- `Sources/PumpX2BLE/` — `PumpBLEClient` (CoreBluetooth central; state restoration via
+  `restoreIdentifier`; the `WritePolicy` interlock: `.readOnly`/`.allowNonDelivery`/`.allowDelivery`).
+- Vendored C: mbedTLS (JPAKE crypto).
+
+## Add / change a message — where things are
+- New request: add under `Sources/PumpX2Messages/Requests/…` with correct `MessageProps` (opcode,
+  size, `signed`, `characteristic`, `modifiesInsulinDelivery`, responseOpCode); register the response in
+  `ResponseParser`; add a byte-exact test from an oracle vector.
+- Signed/insulin-affecting messages must set `modifiesInsulinDelivery: true` and go out only under the
+  right `WritePolicy` — the faBolus app relies on this interlock.
+
+## Consumed by
+- `../faBolus` (the app) via SwiftPM. App-level integration + safety layering lives there; the pump
+  wire format lives here.
+
+## Conventions
+- Match the oracle exactly; every type has a doc-comment citing its Java origin. If a field's meaning is
+  unverified on-device, say so in the doc-comment rather than guessing.
