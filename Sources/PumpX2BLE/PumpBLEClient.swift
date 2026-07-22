@@ -93,8 +93,10 @@ public final class PumpBLEClient: NSObject {
 
     public func connect(_ peripheral: CBPeripheral) {
         stopScan()
+        cancelReconnectWatchdog()
         intentionalDisconnect = false
         self.peripheral = peripheral
+        reconnectTargetId = peripheral.identifier
         peripheral.delegate = self
         state = .connecting
         // Keep the connection request alive across states; iOS completes it when in range.
@@ -106,9 +108,72 @@ public final class PumpBLEClient: NSObject {
     /// Whether we want to be scanning (to resume after Bluetooth toggles back on).
     private var wasScanning = false
 
+    // MARK: Reconnect watchdog
+    /// A watchdog that recovers a *stalled* auto-reconnect. CoreBluetooth's pending `connect` normally
+    /// completes on its own when the pump returns, but if the peripheral handle was lost or the pending
+    /// connect silently died, nothing re-establishes the link — the observed symptom being that the
+    /// app has to be force-quit. The watchdog re-resolves the peripheral by identifier (and rescans as
+    /// a last resort) on escalating backoff until we're `.ready` again or the user disconnects.
+    private var reconnectWatchdog: Timer?
+    private var reconnectAttempts = 0
+    /// Identifier of the peripheral we're trying to keep/recover, so we can re-resolve or re-target it.
+    private var reconnectTargetId: UUID?
+    private static let reconnectBackoff: [TimeInterval] = [5, 10, 20, 30]
+
     public func disconnect() {
         intentionalDisconnect = true
+        cancelReconnectWatchdog()
         if let p = peripheral { central.cancelPeripheralConnection(p) }
+    }
+
+    /// Arm (or restart) the reconnect watchdog. No-op if the user disconnected.
+    private func startReconnectWatchdog() {
+        guard !intentionalDisconnect else { return }
+        reconnectTargetId = peripheral?.identifier ?? reconnectTargetId
+        reconnectAttempts = 0
+        scheduleNextReconnectAttempt()
+    }
+
+    private func scheduleNextReconnectAttempt() {
+        let delay = Self.reconnectBackoff[min(reconnectAttempts, Self.reconnectBackoff.count - 1)]
+        reconnectWatchdog?.invalidate()
+        reconnectWatchdog = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reconnectTick() }
+        }
+    }
+
+    private func cancelReconnectWatchdog() {
+        reconnectWatchdog?.invalidate(); reconnectWatchdog = nil
+        reconnectAttempts = 0
+    }
+
+    private func reconnectTick() {
+        // Recovered or the user took over → stop.
+        guard !intentionalDisconnect, state != .ready else { cancelReconnectWatchdog(); return }
+        // Bluetooth off → wait for `centralManagerDidUpdateState`, but keep the watchdog armed.
+        guard central.state == .poweredOn else { scheduleNextReconnectAttempt(); return }
+        reconnectAttempts += 1
+        let pumpUUID = CBUUID(nsuuid: ServiceUUID.pumpService)
+        // Re-resolve a fresh, valid handle if we lost ours.
+        if peripheral == nil, let id = reconnectTargetId {
+            peripheral = central.retrievePeripherals(withIdentifiers: [id]).first
+                ?? central.retrieveConnectedPeripherals(withServices: [pumpUUID]).first
+            peripheral?.delegate = self
+        }
+        if let p = peripheral {
+            if p.state == .connected {
+                state = .discovering
+                p.discoverServices([pumpUUID])
+            } else {
+                state = .connecting
+                // Re-issuing connect on the same peripheral is idempotent in CoreBluetooth.
+                central.connect(p, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
+            }
+        } else {
+            // No handle at all — rescan and auto-reconnect to the target when it reappears.
+            startScan()
+        }
+        scheduleNextReconnectAttempt()
     }
 
     /// Serializes `message` (framing + optional signing) and writes it to the pump.
@@ -218,7 +283,15 @@ extension PumpBLEClient: CBCentralManagerDelegate {
 
     public nonisolated func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                                            advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        MainActor.assumeIsolated { notify { $0.pumpClient(self, didDiscover: peripheral, rssi: RSSI.intValue) } }
+        MainActor.assumeIsolated {
+            // Watchdog rescan fallback: if this is the peripheral we're trying to recover, reconnect
+            // to it directly rather than waiting for the app to choose again.
+            if !intentionalDisconnect, state != .ready, peripheral.identifier == reconnectTargetId {
+                connect(peripheral)
+                return
+            }
+            notify { $0.pumpClient(self, didDiscover: peripheral, rssi: RSSI.intValue) }
+        }
     }
 
     public nonisolated func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
@@ -247,6 +320,7 @@ extension PumpBLEClient: CBCentralManagerDelegate {
                 peripheral.delegate = self
                 state = .connecting
                 central.connect(peripheral, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
+                startReconnectWatchdog()   // recover if this pending connect stalls
             } else {
                 state = .disconnected
             }
@@ -261,6 +335,7 @@ extension PumpBLEClient: CBCentralManagerDelegate {
             if !intentionalDisconnect {
                 state = .connecting
                 central.connect(peripheral, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
+                startReconnectWatchdog()
             } else {
                 state = .disconnected
             }
@@ -296,6 +371,7 @@ extension PumpBLEClient: CBPeripheralDelegate {
             // Once the messaging characteristics are present, we're ready. (MTU on iOS is
             // negotiated automatically; there's no explicit requestMtu like Android.)
             if characteristics[.currentStatus] != nil && characteristics[.authorization] != nil {
+                cancelReconnectWatchdog()   // link fully re-established
                 state = .ready
                 notify { $0.pumpClientDidBecomeReady(self) }
             }

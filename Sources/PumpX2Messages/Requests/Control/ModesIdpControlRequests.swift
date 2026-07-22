@@ -7,10 +7,27 @@ import Foundation
 /// `request/control/{SetModes,SetActiveIDP}Request`.
 
 /// Sets the pump user mode bitmap — sleep / exercise (opcode 0xCC → 0xCD). 1-byte bitmap cargo.
+/// Precondition (per firmware): Control-IQ must be enabled. Port of `request/control/SetModesRequest`.
 public struct SetModesRequest: Message {
     public static let props = MessageProps(
         opCode: 0xCC, size: 1, signed: true, type: .request,
         characteristic: .control, modifiesInsulinDelivery: true, responseOpCode: 0xCD)
+
+    /// The mode toggle carried in the 1-byte bitmap. Values match the pump firmware / Tandem Source
+    /// event schema — **do not renumber**. 5–7 are defined but unsupported in current firmware.
+    public enum ModeCommand: Int, CaseIterable {
+        case sleepModeOn = 1
+        case sleepModeOff = 2
+        case exerciseModeOn = 3
+        case exerciseModeOff = 4
+        case unsupportedStopAll = 5
+        case unsupportedStartEatingSoon = 6
+        case unsupportedStopEatingSoon = 7
+
+        public var bitmap: Int { rawValue }
+        public static func fromBitmap(_ bitmap: Int) -> ModeCommand? { ModeCommand(rawValue: bitmap) }
+    }
+
     public var cargo: [UInt8]
     public private(set) var bitmap = 0
     public init() { cargo = [] }
@@ -18,6 +35,10 @@ public struct SetModesRequest: Message {
         self.bitmap = bitmap
         self.cargo = [UInt8(bitmap & 0xFF)]
     }
+    /// Convenience: build from a symbolic `ModeCommand` instead of a raw bitmap.
+    public init(mode: ModeCommand) { self.init(bitmap: mode.bitmap) }
+    /// The decoded mode, or nil if the bitmap isn't a known command.
+    public var command: ModeCommand? { ModeCommand.fromBitmap(bitmap) }
     public mutating func parse(_ raw: [UInt8]) {
         let body = removeSignedRequestHmacBytes(raw)
         cargo = body

@@ -321,6 +321,17 @@ struct OracleParityTests {
     @Test func setModesRequestCargo() {
         #expect(SetModesRequest(bitmap: 2).cargo == [2])
         #expect(SetModesRequest.props.opCode == 0xCC && SetModesRequest.props.modifiesInsulinDelivery)
+        // ModeCommand wire values must match the pump firmware / Tandem Source schema exactly.
+        #expect(SetModesRequest.ModeCommand.sleepModeOn.bitmap == 1)
+        #expect(SetModesRequest.ModeCommand.sleepModeOff.bitmap == 2)
+        #expect(SetModesRequest.ModeCommand.exerciseModeOn.bitmap == 3)
+        #expect(SetModesRequest.ModeCommand.exerciseModeOff.bitmap == 4)
+        // The `mode:` convenience serializes the same cargo as the raw bitmap init.
+        #expect(SetModesRequest(mode: .exerciseModeOn).cargo == [3])
+        #expect(SetModesRequest(mode: .sleepModeOn).cargo == [1])
+        // Round-trip: bitmap decodes back to the symbolic command.
+        #expect(SetModesRequest(bitmap: 4).command == .exerciseModeOff)
+        #expect(SetModesRequest.ModeCommand.fromBitmap(99) == nil)
     }
 
     @Test func setActiveIDPRequestMatchesOracle() throws {
