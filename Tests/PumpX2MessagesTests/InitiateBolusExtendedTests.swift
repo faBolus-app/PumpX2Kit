@@ -24,4 +24,17 @@ import Testing
     @Test func minExtendedIs400Milliunits() {
         #expect(InitiateBolusRequest.minExtendedBolusMilliunits == 400)
     }
+
+    /// Locks the carb/BG metadata byte positions for a standard bolus (faBolus now populates these so
+    /// the pump graph / t:connect / Control-IQ record the carbs). 1.0 U (1000 mU), bolusID 10,
+    /// FOOD2 bitmask 1, carbs 45 g @ bytes 17-18, BG 120 mg/dL @ bytes 19-20.
+    @Test func standardBolusCarbsBgCargo() {
+        let req = InitiateBolusRequest(totalVolume: 1000, bolusID: 10, bolusTypeBitmask: 1,
+                                       bolusCarbs: 45, bolusBG: 120)
+        let expected: [UInt8] = [232,3,0,0, 10,0, 0,0, 1, 0,0,0,0, 0,0,0,0, 45,0, 120,0,
+                                 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0]
+        #expect(req.cargo == expected)
+        #expect(req.bolusCarbs == 45)
+        #expect(req.bolusBG == 120)
+    }
 }
