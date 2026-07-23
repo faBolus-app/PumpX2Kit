@@ -1,3 +1,10 @@
+> [!CAUTION]
+> **Not a medical device — do not use it for treatment decisions.** PumpX2Kit is experimental software
+> under active development. It is **not FDA-cleared or approved** and has **not** been clinically
+> validated, and its insulin-dosing path is treated as unproven. **Do not rely on it to make or carry out
+> any insulin-dosing, treatment, or other clinical decision.** It is for software development and
+> evaluation only — always confirm every reading and dose directly on your pump and CGM.
+
 # PumpX2Kit
 
 A Swift port of the reverse-engineered [`jwoglom/pumpx2`](https://github.com/jwoglom/pumpx2)
