@@ -17,8 +17,10 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 KIT = os.path.dirname(HERE)
-REF = os.path.expanduser(
-    "~/Code/zgranowitz/references/pumpx2/messages/src/main/java/com/jwoglom/pumpx2/pump/messages")
+# Defaults to the vendored pumpX2 oracle submodule; override with PUMPX2_ORACLE_REF.
+REF = os.environ.get(
+    "PUMPX2_ORACLE_REF",
+    os.path.join(KIT, "vendor/pumpx2-oracle/messages/src/main/java/com/jwoglom/pumpx2/pump/messages"))
 
 
 def java_classes(subdir, exclude_subdirs=()):
