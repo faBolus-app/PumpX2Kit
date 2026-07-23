@@ -7,7 +7,7 @@ import Foundation
 public struct PlaySoundRequest: Message {
     public static let props = MessageProps(
         opCode: 0xF4, size: 0, signed: true, type: .request,
-        characteristic: .control, responseOpCode: 0xF5)
+        characteristic: .control, risk: .benign, responseOpCode: 0xF5)   // find-my-pump — no therapy effect (P-01)
     public var cargo: [UInt8]
     public init() { cargo = [] }
     public mutating func parse(_ raw: [UInt8]) { cargo = [] }

@@ -39,17 +39,34 @@ public final class PumpBLEClient: NSObject {
     }
 
     /// Graded write safety. Governs which outgoing messages `send()` permits — a defense-in-
-    /// depth interlock so delivery can only happen after a deliberate, explicit opt-in.
+    /// depth interlock so delivery can only happen after a deliberate, explicit opt-in. Each policy
+    /// authorizes up to a maximum `OperationRisk` (audit P-01), so a caller that only needs a benign
+    /// op (dismiss an alert, find-my-pump) no longer has to open the same gate as therapy-config.
     public enum WritePolicy: Sendable, Equatable {
         /// Reads + pairing only. Blocks anything on CONTROL, any signed message, or anything
         /// insulin-affecting. The safe default.
         case readOnly
-        /// Allow signed CONTROL messages that do NOT dispense (bolus permission/release,
-        /// cancel), but still HARD-BLOCK insulin delivery (`modifiesInsulinDelivery`). Used to
-        /// validate signing on hardware without dispensing.
+        /// Allow only **benign** signed control (dismiss notification, find-my-pump, carb/BG metadata):
+        /// signed proof works, but therapy-significant config, destructive commands, and delivery are
+        /// all still blocked (audit P-01).
+        case allowBenignControl
+        /// Allow signed CONTROL messages up to therapy-significant configuration + destructive commands
+        /// (limits, Control-IQ, time, CGM, factory reset), but still HARD-BLOCK insulin delivery
+        /// (`modifiesInsulinDelivery`). Used to validate signing on hardware without dispensing.
         case allowNonDelivery
         /// Allow everything, including insulin delivery. Experimental.
         case allowDelivery
+
+        /// The highest `OperationRisk` this policy authorizes.
+        var maxRisk: OperationRisk {
+            switch self {
+            case .readOnly:           return .read
+            case .allowBenignControl: return .benign
+            case .allowNonDelivery:   return .destructive
+            case .allowDelivery:      return .delivery
+            }
+        }
+        func permits(_ risk: OperationRisk) -> Bool { risk <= maxRisk }
     }
 
     /// Current write policy. Defaults to `.readOnly`; callers must opt in explicitly.
@@ -188,18 +205,13 @@ public final class PumpBLEClient: NSObject {
         pumpTimeSinceReset: UInt32 = 0,
         allowInsulinDelivery: Bool = false
     ) throws -> UInt8 {
-        // Write interlock (defense in depth): refuse messages the current policy disallows.
-        switch writePolicy {
-        case .readOnly:
-            if message.characteristic == .control || message.signed || message.props.modifiesInsulinDelivery {
-                throw ClientError.writeBlocked(policy: writePolicy, opcode: message.opCode)
-            }
-        case .allowNonDelivery:
-            if message.props.modifiesInsulinDelivery {
-                throw ClientError.writeBlocked(policy: writePolicy, opcode: message.opCode)
-            }
-        case .allowDelivery:
-            break
+        // Write interlock (defense in depth): refuse messages the current policy disallows. Authorize on
+        // the operation-risk class (audit P-01) — a strict superset of the old byte checks: `.readOnly`
+        // still blocks any control/signed/delivery message, `.allowNonDelivery` still blocks only
+        // delivery, and the new `.allowBenignControl` permits benign signed ops WITHOUT opening the
+        // therapy-config tier.
+        if !writePolicy.permits(message.operationRisk) {
+            throw ClientError.writeBlocked(policy: writePolicy, opcode: message.opCode)
         }
         guard state == .ready, let peripheral,
               let cbChar = characteristics[message.characteristic] else {

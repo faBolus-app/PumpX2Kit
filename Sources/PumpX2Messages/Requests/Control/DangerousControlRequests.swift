@@ -7,7 +7,7 @@ import Foundation
 
 /// Activates shelf/storage mode (opcode 0xBA → 0xBB). Empty cargo. Dangerous.
 public struct ActivateShelfModeRequest: Message {
-    public static let props = MessageProps(opCode: 0xBA, size: 0, signed: true, type: .request, characteristic: .control, responseOpCode: 0xBB)
+    public static let props = MessageProps(opCode: 0xBA, size: 0, signed: true, type: .request, characteristic: .control, risk: .destructive, responseOpCode: 0xBB)
     public var cargo: [UInt8]
     public init() { cargo = [] }
     public mutating func parse(_ raw: [UInt8]) { cargo = [] }
@@ -15,7 +15,7 @@ public struct ActivateShelfModeRequest: Message {
 
 /// Disconnects the pump BLE session (opcode 0xBE → 0xBF). Empty cargo. Dangerous.
 public struct DisconnectPumpRequest: Message {
-    public static let props = MessageProps(opCode: 0xBE, size: 0, signed: true, type: .request, characteristic: .control, responseOpCode: 0xBF)
+    public static let props = MessageProps(opCode: 0xBE, size: 0, signed: true, type: .request, characteristic: .control, risk: .destructive, responseOpCode: 0xBF)
     public var cargo: [UInt8]
     public init() { cargo = [] }
     public mutating func parse(_ raw: [UInt8]) { cargo = [] }
@@ -23,7 +23,7 @@ public struct DisconnectPumpRequest: Message {
 
 /// Factory reset (opcode 0xE8 → 0xE9). 8-byte cargo: uint32 key + uint32 serialNumber. DESTRUCTIVE.
 public struct FactoryResetRequest: Message {
-    public static let props = MessageProps(opCode: 0xE8, size: 8, signed: true, type: .request, characteristic: .control, responseOpCode: 0xE9)
+    public static let props = MessageProps(opCode: 0xE8, size: 8, signed: true, type: .request, characteristic: .control, risk: .destructive, responseOpCode: 0xE9)
     public var cargo: [UInt8]
     public init() { cargo = [] }
     public init(key: UInt32, serialNumber: UInt32) {
@@ -35,7 +35,7 @@ public struct FactoryResetRequest: Message {
 /// Factory reset "B" variant (opcode 0x7C → 0x7D). 9-byte cargo: uint32 key + uint32 serialNumber
 /// + enableShelfMode. DESTRUCTIVE.
 public struct FactoryResetBRequest: Message {
-    public static let props = MessageProps(opCode: 0x7C, size: 9, signed: true, type: .request, characteristic: .control, responseOpCode: 0x7D)
+    public static let props = MessageProps(opCode: 0x7C, size: 9, signed: true, type: .request, characteristic: .control, risk: .destructive, responseOpCode: 0x7D)
     public var cargo: [UInt8]
     public init() { cargo = [] }
     public init(key: UInt32, serialNumber: UInt32, enableShelfMode: Bool) {

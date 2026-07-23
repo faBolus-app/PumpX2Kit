@@ -27,6 +27,8 @@ public extension Message {
     var stream: Bool { Self.props.stream }
     var type: MessageType { Self.props.type }
     var characteristic: Characteristic { Self.props.characteristic }
+    /// Operation-risk class for authorization (audit P-01).
+    var operationRisk: OperationRisk { Self.props.operationRisk }
 
     mutating func fillWithEmptyCargo() { cargo = [] }
 
