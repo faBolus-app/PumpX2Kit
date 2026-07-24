@@ -71,16 +71,23 @@ public final class PumpTransactionCoordinator {
         let txId = try write()   // may throw synchronously (authorization/notReady) → no pending registered
         let id = nextId
         nextId &+= 1
-        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<[UInt8], Error>) in
-            var entry = Pending(id: id, expectedCharacteristic: characteristic, expectedOpCode: opCode,
-                                txId: txId, continuation: cont, deadline: nil)
-            entry.deadline = Task { [weak self] in
-                let ns = UInt64((deadline * 1_000_000_000).rounded())
-                try? await Task.sleep(nanoseconds: ns)
-                guard !Task.isCancelled else { return }
-                self?.resolve(id: id, with: .failure(TxError.timedOut(characteristic: characteristic, opCode: opCode)))
+        // Structured-cancellation aware: if the OWNING task is cancelled while awaiting, resolve ONLY this
+        // transaction as `.cancelled` (never a sibling), so a cancelled bolus poll can't leak a suspended
+        // continuation or misfire onto another in-flight request (§6 requirement 4).
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<[UInt8], Error>) in
+                var entry = Pending(id: id, expectedCharacteristic: characteristic, expectedOpCode: opCode,
+                                    txId: txId, continuation: cont, deadline: nil)
+                entry.deadline = Task { [weak self] in
+                    let ns = UInt64((deadline * 1_000_000_000).rounded())
+                    try? await Task.sleep(nanoseconds: ns)
+                    guard !Task.isCancelled else { return }
+                    self?.resolve(id: id, with: .failure(TxError.timedOut(characteristic: characteristic, opCode: opCode)))
+                }
+                pending.append(entry)
             }
-            pending.append(entry)
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.resolve(id: id, with: .failure(TxError.cancelled)) }
         }
     }
 

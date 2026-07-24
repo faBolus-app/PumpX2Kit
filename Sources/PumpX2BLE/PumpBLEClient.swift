@@ -103,6 +103,12 @@ public final class PumpBLEClient: NSObject {
     private var peripheral: CBPeripheral?
     /// Discovered pump characteristics keyed by our `Characteristic` enum.
     private var characteristics: [Characteristic: CBCharacteristic] = [:]
+    /// PX-08 subscription-ready barrier: messaging notification characteristics we've requested
+    /// `setNotifyValue(true)` on, and the subset the pump has CONFIRMED via `didUpdateNotificationState`.
+    /// `.ready` is withheld until every requested one is confirmed, so a delivery can't be written before
+    /// its response channel is actually subscribed (which would silently drop the reply → false timeout).
+    private var requestedNotify: Set<Characteristic> = []
+    private var confirmedNotifying: Set<Characteristic> = []
     /// Per-characteristic inbound reassembly buffers.
     private var reassembly: [Characteristic: PacketReassembler] = [:]
     private let txIds = TransactionId()
@@ -425,6 +431,9 @@ extension PumpBLEClient: CBPeripheralDelegate {
     public nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         MainActor.assumeIsolated {
             if let error { notify { $0.pumpClient(self, didError: error) }; return }
+            // Fresh (re)discovery → reset the subscription-ready barrier so a reconnect re-confirms notify.
+            requestedNotify.removeAll()
+            confirmedNotifying.removeAll()
             let pumpUUID = CBUUID(nsuuid: ServiceUUID.pumpService)
             for service in peripheral.services ?? [] where service.uuid == pumpUUID {
                 peripheral.discoverCharacteristics(nil, for: service)
@@ -441,23 +450,55 @@ extension PumpBLEClient: CBPeripheralDelegate {
                 characteristics[mapped] = cb
                 if ServiceUUID.notificationCharacteristics.contains(mapped),
                    cb.properties.contains(.notify) {
+                    requestedNotify.insert(mapped)
                     peripheral.setNotifyValue(true, for: cb)
                 }
             }
-            // Once the messaging characteristics are present, we're ready. (MTU on iOS is
-            // negotiated automatically; there's no explicit requestMtu like Android.)
-            if characteristics[.currentStatus] != nil && characteristics[.authorization] != nil {
-                cancelReconnectWatchdog()   // link fully re-established
-                state = .ready
-                notify { $0.pumpClientDidBecomeReady(self) }
+            // PX-08: do NOT declare `.ready` here. Readiness now waits for the pump to CONFIRM the
+            // notification subscriptions (`didUpdateNotificationState`) so a response channel is live
+            // before any delivery is written — see `maybeBecomeReady()`.
+            maybeBecomeReady()
+        }
+    }
+
+    /// Become `.ready` only once the messaging characteristics are present AND every requested
+    /// notification subscription has been confirmed by the pump (PX-08 subscription-ready barrier).
+    private func maybeBecomeReady() {
+        guard state != .ready else { return }
+        guard characteristics[.currentStatus] != nil, characteristics[.authorization] != nil else { return }
+        guard !requestedNotify.isEmpty, requestedNotify.isSubset(of: confirmedNotifying) else { return }
+        cancelReconnectWatchdog()   // link fully re-established
+        state = .ready
+        notify { $0.pumpClientDidBecomeReady(self) }
+    }
+
+    public nonisolated func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic,
+                                       error: Error?) {
+        MainActor.assumeIsolated {
+            // A failed subscription means a response channel isn't live → fail closed (PX-04/PX-08): reset
+            // the write policy and resume any pending transaction, and surface the error.
+            if let error {
+                failClosed(resumePending: true)
+                notify { $0.pumpClient(self, didError: error) }
+                return
             }
+            guard let mapped = Characteristic.of(uuid: characteristic.uuid.uuidValue) else { return }
+            if characteristic.isNotifying { confirmedNotifying.insert(mapped) }
+            else { confirmedNotifying.remove(mapped) }
+            maybeBecomeReady()
         }
     }
 
     public nonisolated func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic,
                                        error: Error?) {
         MainActor.assumeIsolated {
-            if let error { notify { $0.pumpClient(self, didError: error) }; return }
+            // A read/notify-value error orphans any awaited response → fail closed (reset policy + resume
+            // every pending transaction) so a delivery caller sees connectionLost, not a silent hang (§6 req 5).
+            if let error {
+                failClosed(resumePending: true)
+                notify { $0.pumpClient(self, didError: error) }
+                return
+            }
             guard let mapped = Characteristic.of(uuid: characteristic.uuid.uuidValue),
                   let data = characteristic.value else { return }
             var reassembler = reassembly[mapped] ?? PacketReassembler()

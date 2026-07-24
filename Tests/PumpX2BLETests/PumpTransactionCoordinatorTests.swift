@@ -98,4 +98,37 @@ import PumpX2Messages
         coord.ingest(frame: [0x03, 9, 1], on: .control)
         _ = try await task2.value
     }
+
+    /// Two transactions sharing the SAME (characteristic, opcode) resolve FIFO: the first-registered gets
+    /// the first matching frame. (The Tandem wire has no per-request response tag, so same-opcode requests
+    /// are serialized in practice; this documents the ordering the delivery flow relies on — §6 req 3.)
+    @MainActor @Test func sameOpcodeResolvesFIFO() async throws {
+        let coord = PumpTransactionCoordinator()
+        let a = await launchAndRegister(coord, on: .control, opCode: 0x03, txId: 1)
+        let b = await launchAndRegister(coord, on: .control, opCode: 0x03, txId: 2)
+        #expect(coord.inFlightCount == 2)
+        #expect(coord.ingest(frame: [0x03, 1, 0xAA], on: .control))   // first frame → oldest (a)
+        let aFrame = try await a.value
+        #expect(aFrame == [0x03, 1, 0xAA])
+        #expect(coord.inFlightCount == 1)
+        #expect(coord.ingest(frame: [0x03, 2, 0xBB], on: .control))   // next frame → b
+        let bFrame = try await b.value
+        #expect(bFrame == [0x03, 2, 0xBB])
+    }
+
+    /// Cancelling ONE awaiting task resolves only that transaction (`.cancelled`); a sibling keeps
+    /// awaiting and still resolves normally — no leaked continuation, no misfire (§6 req 4).
+    @MainActor @Test func cancellingOneTaskResolvesOnlyThatTransaction() async throws {
+        let coord = PumpTransactionCoordinator()
+        let a = await launchAndRegister(coord, on: .control, opCode: 0x03, txId: 1)
+        let b = await launchAndRegister(coord, on: .control, opCode: 0x05, txId: 2)
+        #expect(coord.inFlightCount == 2)
+        a.cancel()
+        let aResult = await a.result
+        if case .success = aResult { Issue.record("expected the cancelled task to throw") }
+        #expect(coord.inFlightCount == 1)                             // only a was resolved
+        #expect(coord.ingest(frame: [0x05, 2, 0], on: .control))      // b unaffected
+        let bFrame = try await b.value
+        #expect(bFrame.first == 0x05)
+    }
 }
