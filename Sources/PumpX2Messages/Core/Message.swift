@@ -10,6 +10,12 @@ public protocol Message: Sendable {
 
     var cargo: [UInt8] { get set }
 
+    /// Operation-risk class for authorization (audit P-01). Defaults to the static
+    /// `props.operationRisk`; a message whose risk depends on its *cargo* (e.g. a BG entry that is or
+    /// isn't a CGM calibration — PX-01) overrides this to compute risk per instance. `send()` reads
+    /// this instance property, so a per-instance override is enforced at the write interlock.
+    var operationRisk: OperationRisk { get }
+
     /// Constructs an instance with empty cargo.
     init()
 

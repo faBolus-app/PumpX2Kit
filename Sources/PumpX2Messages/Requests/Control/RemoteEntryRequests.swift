@@ -56,6 +56,12 @@ public struct RemoteBgEntryRequest: Message {
     public private(set) var bolusId = 0
     public init() { cargo = [] }
 
+    /// PX-01: a plain remote BG entry is benign metadata, but a BG marked
+    /// `useForCgmCalibration` **recalibrates the CGM** — that shifts every subsequent glucose reading
+    /// and therefore every Control-IQ / bolus-calc decision, so it is therapy-significant (`.settings`),
+    /// not `.benign`. Risk is computed from cargo so `.allowBenignControl` cannot smuggle a calibration.
+    public var operationRisk: OperationRisk { useForCgmCalibration ? .settings : .benign }
+
     /// Low-level init with explicit entryType/source ids.
     public init(bg: Int, useForCgmCalibration: Bool, entryTypeId: Int, sourceId: Int,
                 pumpTimeSecondsSinceBoot: UInt32, bolusId: Int) {

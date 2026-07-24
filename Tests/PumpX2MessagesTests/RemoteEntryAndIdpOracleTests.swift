@@ -29,29 +29,58 @@ import Testing
         #expect(legacy.cargo[4] == 0)   // PUMP — contradicts the captures; must not be used for a remote entry
     }
 
-    /// IDP segment write: `idpStatusId` is a changed-fields bitmask (IDPSegmentStatus BASAL_RATE 1 |
-    /// CARB_RATIO 2 | TARGET_BG 4 | CORRECTION_FACTOR 8 | START_TIME 16 = 31 for all). faBolus now sends
-    /// 31 (all fields) for create/modify; it previously sent 0 ("nothing changed"). Byte 16 is idpStatusId.
-    @Test func setIdpSegmentStatusBitmaskAllFields() {
-        let req = SetIDPSegmentRequest(idpId: 1, profileIndex: 0, segmentIndex: 0, operationId: 1,
-                                       profileStartTime: 0, profileBasalRate: 1000, profileCarbRatio: 3000,
-                                       profileTargetBG: 100, profileISF: 2, idpStatusId: 31)
-        #expect(req.cargo.count == 17)
-        #expect(req.cargo[16] == 31)   // all-fields bitmask (was 0)
-    }
+    // MARK: - PX-05: full-byte IDP payload locks (create / modify / delete + one-bit mutation)
+    //
+    // The per-field checks above catch a reverted field value; these lock the COMPLETE 35-byte create and
+    // 17-byte segment payloads so that a change to ANY byte (layout, offset, endianness, an adjacent
+    // field) is caught, not just the four we happened to name. The encoders are independently proven
+    // against the Java oracle in OracleParityTests; these pin the exact argument tuple faBolus sends.
 
-    /// IDP profile create: reference new-profile values (CreateIDPRequestTest.new1 + field doc-comments):
-    /// timeSegmentBitmask 31 (all), bolusSettingsBitmask 5 (insulinDuration|carbEntry), idpSourceId 255
-    /// (0xFF = brand-new, not a duplicate), carbEntry 1. faBolus now sends these (was 1 / 0 / 0 / 1).
-    @Test func createIdpNewProfileFieldBytes() {
+    /// Full 35-byte create payload (name "testprofile", CR 3000, basal 1000, target 100, ISF 2,
+    /// duration 300, timeSeg 31, bolusSettings 5, idpSource 255, carbEntry 1).
+    @Test func createIdpFullByteLock() {
         let req = CreateIDPRequest(name: "testprofile", firstSegmentProfileCarbRatio: 3000,
                                    firstSegmentProfileBasalRate: 1000, firstSegmentProfileTargetBG: 100,
                                    firstSegmentProfileISF: 2, profileInsulinDuration: 300,
                                    timeSegmentBitmask: 31, bolusSettingsBitmask: 5, carbEntry: 1, idpSourceId: 255)
-        #expect(req.cargo.count == 35)
-        #expect(req.cargo[31] == 31)    // timeSegmentBitmask = all
-        #expect(req.cargo[32] == 5)     // bolusSettingsBitmask = insulinDuration|carbEntry
-        #expect(req.cargo[33] == 255)   // idpSourceId 0xFF = new profile (was 0 = "duplicate profile 0")
-        #expect(req.cargo[34] == 1)     // carbEntry
+        let expected: [UInt8] = [116, 101, 115, 116, 112, 114, 111, 102, 105, 108, 101, 0, 0, 0, 0, 0, 0,
+                                 184, 11, 0, 0, 0, 0, 232, 3, 100, 0, 2, 0, 44, 1, 31, 5, 255, 1]
+        #expect(req.cargo == expected)
+        // Field callouts (offsets): [31]=timeSeg 31, [32]=bolusSettings 5, [33]=idpSource 255, [34]=carbEntry 1.
+    }
+
+    /// Full 17-byte segment MODIFY payload: idpStatusId = 31 (all fields changed). Byte 3 = operationId 1.
+    @Test func setIdpSegmentModifyFullByteLock() {
+        let req = SetIDPSegmentRequest(idpId: 1, profileIndex: 0, segmentIndex: 0, operationId: 1,
+                                       profileStartTime: 0, profileBasalRate: 1000, profileCarbRatio: 3000,
+                                       profileTargetBG: 100, profileISF: 2, idpStatusId: 31)
+        #expect(req.cargo == [1, 0, 0, 1, 0, 0, 232, 3, 184, 11, 0, 0, 100, 0, 2, 0, 31])
+        #expect(req.cargo[3] == 1)     // operationId = modify
+        #expect(req.cargo[16] == 31)   // all-fields changed-mask
+    }
+
+    /// Full 17-byte segment DELETE payload: operationId 2, idpStatusId 0 ("nothing changed" is correct
+    /// for a delete — it is the ONE case where 0 is right).
+    @Test func setIdpSegmentDeleteFullByteLock() {
+        let req = SetIDPSegmentRequest(idpId: 1, profileIndex: 0, segmentIndex: 0, operationId: 2,
+                                       profileStartTime: 0, profileBasalRate: 1000, profileCarbRatio: 3000,
+                                       profileTargetBG: 100, profileISF: 2, idpStatusId: 0)
+        #expect(req.cargo == [1, 0, 0, 2, 0, 0, 232, 3, 184, 11, 0, 0, 100, 0, 2, 0, 0])
+        #expect(req.cargo[3] == 2)     // operationId = delete
+        #expect(req.cargo[16] == 0)    // changed-mask 0
+    }
+
+    /// One-bit mutation: flipping a single input changes exactly the expected byte(s) and nothing else —
+    /// proving the full-byte lock is sensitive (a regression can't slip through an unchecked offset).
+    @Test func idpSegmentOneBitMutationIsDetected() {
+        let base = SetIDPSegmentRequest(idpId: 1, profileIndex: 0, segmentIndex: 0, operationId: 1,
+                                        profileStartTime: 0, profileBasalRate: 1000, profileCarbRatio: 3000,
+                                        profileTargetBG: 100, profileISF: 2, idpStatusId: 31)
+        let mutated = SetIDPSegmentRequest(idpId: 1, profileIndex: 0, segmentIndex: 0, operationId: 1,
+                                           profileStartTime: 0, profileBasalRate: 1000, profileCarbRatio: 3000,
+                                           profileTargetBG: 100, profileISF: 2, idpStatusId: 30)   // 31→30
+        #expect(base.cargo != mutated.cargo)
+        let diffs = zip(base.cargo, mutated.cargo).enumerated().filter { $0.element.0 != $0.element.1 }.map(\.offset)
+        #expect(diffs == [16])   // exactly the idpStatusId byte moved
     }
 }

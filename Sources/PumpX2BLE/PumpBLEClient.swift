@@ -30,7 +30,7 @@ public final class PumpBLEClient: NSObject {
         case idle, scanning, connecting, discovering, ready, disconnected
     }
 
-    public enum ClientError: Error {
+    public enum ClientError: Error, Equatable {
         case notReady
         case unknownCharacteristic(Characteristic)
         case writeFailed(Characteristic)
@@ -46,14 +46,19 @@ public final class PumpBLEClient: NSObject {
         /// Reads + pairing only. Blocks anything on CONTROL, any signed message, or anything
         /// insulin-affecting. The safe default.
         case readOnly
-        /// Allow only **benign** signed control (dismiss notification, find-my-pump, carb/BG metadata):
-        /// signed proof works, but therapy-significant config, destructive commands, and delivery are
-        /// all still blocked (audit P-01).
+        /// Allow only **benign** signed control (dismiss notification, find-my-pump, non-calibration
+        /// carb/BG metadata): signed proof works, but therapy-significant config, destructive commands,
+        /// and delivery are all still blocked (audit P-01).
         case allowBenignControl
-        /// Allow signed CONTROL messages up to therapy-significant configuration + destructive commands
-        /// (limits, Control-IQ, time, CGM, factory reset), but still HARD-BLOCK insulin delivery
-        /// (`modifiesInsulinDelivery`). Used to validate signing on hardware without dispensing.
+        /// Allow signed CONTROL up to therapy-significant **configuration** (limits, Control-IQ, time,
+        /// CGM session/alerts/calibration, reminders, IDP/profile edits), but HARD-BLOCK **destructive**
+        /// commands (factory reset / shelf / disconnect-pump) *and* insulin delivery. Used to validate
+        /// signing on hardware without dispensing. (PX-03: no longer authorizes destructive ops.)
         case allowNonDelivery
+        /// Allow **destructive** non-dispensing commands (factory reset, shelf mode, disconnect-pump) in
+        /// addition to settings — HARD-BLOCK insulin delivery. Intended to be granted **explicitly and
+        /// briefly** around a single destructive action, never left standing (PX-03).
+        case allowDestructive
         /// Allow everything, including insulin delivery. Experimental.
         case allowDelivery
 
@@ -62,15 +67,32 @@ public final class PumpBLEClient: NSObject {
             switch self {
             case .readOnly:           return .read
             case .allowBenignControl: return .benign
-            case .allowNonDelivery:   return .destructive
+            case .allowNonDelivery:   return .settings      // PX-03: settings-only (was .destructive)
+            case .allowDestructive:   return .destructive
             case .allowDelivery:      return .delivery
             }
         }
         func permits(_ risk: OperationRisk) -> Bool { risk <= maxRisk }
     }
 
-    /// Current write policy. Defaults to `.readOnly`; callers must opt in explicitly.
+    /// Current write policy. Defaults to `.readOnly`; callers must opt in explicitly. Reset to
+    /// `.readOnly` fail-closed by the library on every disconnect/drop/restore/error (PX-04) — a caller
+    /// must not rely on an elevated policy surviving a transaction or connection change.
     public var writePolicy: WritePolicy = .readOnly
+
+    /// Pure authorization decision (PX-02), separated from readiness/transport so it is deterministically
+    /// testable and cannot be masked by `.notReady`. Returns the exact `.writeBlocked` error a policy
+    /// would raise for `message`, or `nil` if the policy permits it. `send()` consults this first.
+    public func authorizationError(for message: Message) -> ClientError? {
+        writePolicy.permits(message.operationRisk)
+            ? nil
+            : .writeBlocked(policy: writePolicy, opcode: message.opCode)
+    }
+
+    /// Owns in-flight request/response correlation, deadlines, and fail-closed completion (PX-08).
+    /// Callers that need an awaited response use `sendAwaitingResponse`; unsolicited frames (streams,
+    /// proactive status) are not consumed here and still reach the delegate.
+    public let transactions = PumpTransactionCoordinator()
 
     public weak var delegate: PumpBLEClientDelegate?
     public private(set) var state: State = .unknown {
@@ -206,13 +228,11 @@ public final class PumpBLEClient: NSObject {
         allowInsulinDelivery: Bool = false
     ) throws -> UInt8 {
         // Write interlock (defense in depth): refuse messages the current policy disallows. Authorize on
-        // the operation-risk class (audit P-01) — a strict superset of the old byte checks: `.readOnly`
-        // still blocks any control/signed/delivery message, `.allowNonDelivery` still blocks only
-        // delivery, and the new `.allowBenignControl` permits benign signed ops WITHOUT opening the
-        // therapy-config tier.
-        if !writePolicy.permits(message.operationRisk) {
-            throw ClientError.writeBlocked(policy: writePolicy, opcode: message.opCode)
-        }
+        // the operation-risk class (audit P-01), via the pure `authorizationError` decision (PX-02) so
+        // the block is checked BEFORE readiness — a wrongly-permitted command can't be hidden by
+        // `.notReady`. `.readOnly` blocks any control/signed/delivery; `.allowNonDelivery` now blocks
+        // destructive too (PX-03); `.allowBenignControl` permits only benign ops.
+        if let authError = authorizationError(for: message) { throw authError }
         guard state == .ready, let peripheral,
               let cbChar = characteristics[message.characteristic] else {
             throw ClientError.notReady
@@ -229,6 +249,47 @@ public final class PumpBLEClient: NSObject {
             peripheral.writeValue(Data(packet.build()), for: cbChar, type: .withResponse)
         }
         return txId
+    }
+
+    /// Sends `message` and awaits its correlated response frame with a bounded deadline (PX-08).
+    /// The synchronous parts of `send` (authorization + readiness + write) run before suspending, so an
+    /// authorization/not-ready failure is thrown immediately and never registers a pending transaction.
+    /// On disconnect/teardown the awaiting call is resumed with `TxError.connectionLost` (fail-closed);
+    /// on deadline expiry with `TxError.timedOut` — which a delivery caller must treat as *indeterminate*.
+    ///
+    /// - Parameter responseOpCode: the opcode to correlate; defaults to `message.props.responseOpCode`.
+    ///   Throws `ClientError.notReady` if the message declares no response opcode and none is given.
+    @discardableResult
+    public func sendAwaitingResponse(
+        _ message: Message,
+        authenticationKey: [UInt8] = [],
+        pumpTimeSinceReset: UInt32 = 0,
+        allowInsulinDelivery: Bool = false,
+        responseOpCode: UInt8? = nil,
+        deadline: TimeInterval
+    ) async throws -> [UInt8] {
+        guard let expectedOpCode = responseOpCode ?? message.props.responseOpCode else {
+            throw ClientError.notReady
+        }
+        let characteristic = message.characteristic
+        return try await transactions.perform(
+            expectedResponseOn: characteristic, opCode: expectedOpCode, deadline: deadline
+        ) {
+            try self.send(message,
+                          authenticationKey: authenticationKey,
+                          pumpTimeSinceReset: pumpTimeSinceReset,
+                          allowInsulinDelivery: allowInsulinDelivery)
+        }
+    }
+
+    /// Fail-closed teardown (PX-04): reset the write policy to `.readOnly` and resume every outstanding
+    /// transaction. Called by the library itself on every disconnect / failed connect / restoration /
+    /// error — a caller must never rely on an elevated policy or a pending response surviving a link
+    /// change. Prior to this the app had to reset the policy externally (audit A-03), and a missed reset
+    /// left `.allowDelivery` standing into the next connection.
+    private func failClosed(resumePending: Bool) {
+        writePolicy = .readOnly
+        if resumePending { transactions.failAll(.connectionLost) }
     }
 
     // MARK: - Helpers
@@ -284,6 +345,7 @@ extension PumpBLEClient: CBCentralManagerDelegate {
     public nonisolated func centralManager(_ central: CBCentralManager,
                                            willRestoreState dict: [String: Any]) {
         MainActor.assumeIsolated {
+            failClosed(resumePending: false)   // PX-04: a relaunched central starts read-only
             let pumpUUID = CBUUID(nsuuid: ServiceUUID.pumpService)
             guard let p = central.retrieveConnectedPeripherals(withServices: [pumpUUID]).first else { return }
             self.peripheral = p
@@ -322,6 +384,7 @@ extension PumpBLEClient: CBCentralManagerDelegate {
         MainActor.assumeIsolated {
             characteristics.removeAll()
             reassembly.removeAll()
+            failClosed(resumePending: true)   // PX-04/PX-08: policy → .readOnly, resume all waiters
             if let error { notify { $0.pumpClient(self, didError: error) } }
             // Auto-reconnect on an unintended drop (e.g. out of range): a pending connect
             // persists in CoreBluetooth and completes when the pump comes back in range, in the
@@ -342,6 +405,7 @@ extension PumpBLEClient: CBCentralManagerDelegate {
     public nonisolated func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral,
                                            error: Error?) {
         MainActor.assumeIsolated {
+            failClosed(resumePending: true)   // PX-04/PX-08: never leave policy elevated or a waiter hung
             if let error { notify { $0.pumpClient(self, didError: error) } }
             // Retry unless the user disconnected: re-issue the (persisting) connect request.
             if !intentionalDisconnect {
@@ -399,7 +463,11 @@ extension PumpBLEClient: CBPeripheralDelegate {
             var reassembler = reassembly[mapped] ?? PacketReassembler()
             if let frame = reassembler.ingest([UInt8](data)) {
                 reassembly[mapped] = PacketReassembler()
-                notify { $0.pumpClient(self, didReceiveFrame: frame, on: mapped) }
+                // PX-08: if an awaited transaction correlates to this frame, it consumes it. Otherwise
+                // (unsolicited stream/status, or a caller still on the delegate path) deliver as before.
+                if !transactions.ingest(frame: frame, on: mapped) {
+                    notify { $0.pumpClient(self, didReceiveFrame: frame, on: mapped) }
+                }
             } else {
                 reassembly[mapped] = reassembler
             }

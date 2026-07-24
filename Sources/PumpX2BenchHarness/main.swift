@@ -49,8 +49,9 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
     var signingTimestamp: UInt32 = 0
     var permissionSent = false
     var currentBolusId: Int = 0
-    // Bolus type bits (controlX2 convention): FOOD2 always; +FOOD1 carbs; +CORRECTION.
-    static let food2 = 8, food1 = 1, correction = 2
+    // Bolus type bits are derived by the shared library helper `InitiateBolusRequest.typeBitmask`
+    // (PX-06): FOOD1 when carbs present, else FOOD2 — never both. (The harness previously OR-ed FOOD2
+    // into carb boluses, contradicting the oracle FOOD1 byte-lock.)
 
     // Carb-bolus computed plan (milliunits) + inputs collected from the pump.
     var carbGrams: Double = 0
@@ -146,9 +147,10 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
         currentBolusId = bolusId
         print("[bolus] initiating \(Double(milliunits)/1000.0) u SALINE (bolusId \(bolusId))…")
         do {
+            // Units-only manual bolus → no carbs → FOOD2 (via the shared helper). Validated (PX-07).
+            let mask = InitiateBolusRequest.typeBitmask(hasCarbs: false, hasCorrection: false, isExtended: false)
             try client.send(
-                InitiateBolusRequest(totalVolume: milliunits, bolusID: bolusId,
-                                     bolusTypeBitmask: Self.food2),
+                try InitiateBolusRequest(validating: milliunits, bolusID: bolusId, bolusTypeBitmask: mask),
                 authenticationKey: authKey, pumpTimeSinceReset: signingTimestamp,
                 allowInsulinDelivery: true)
         } catch { print("[bolus] initiate failed: \(error)") }
@@ -170,7 +172,9 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
         planFoodMU = UInt32(min(foodMU, total))
         planCorrectionMU = UInt32(total) - planFoodMU
         planTotalMU = UInt32(total)
-        planBits = Self.food2 | (carbGrams > 0 ? Self.food1 : 0) | (corrAfterIob > 0 ? Self.correction : 0)
+        // PX-06: FOOD1 for a carb bolus (not FOOD1|FOOD2); shared with production via the library helper.
+        planBits = InitiateBolusRequest.typeBitmask(hasCarbs: carbGrams > 0,
+                                                    hasCorrection: corrAfterIob > 0, isExtended: false)
 
         print(String(format: "[carb-bolus] carbs=%.0fg bg=%@ | carbRatio=%.1f g/u ISF=%d target=%d IOB=%.2fu",
                      carbGrams, carbBg.map { "\($0)" } ?? "—",
@@ -191,10 +195,10 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
         print(String(format: "[carb-bolus] initiating %.2f u SALINE (bolusId %d)…", Double(planTotalMU) / 1000.0, bolusId))
         do {
             try client.send(
-                InitiateBolusRequest(totalVolume: planTotalMU, bolusID: bolusId, bolusTypeBitmask: planBits,
-                                     foodVolume: planFoodMU, correctionVolume: planCorrectionMU,
-                                     bolusCarbs: Int(carbGrams), bolusBG: carbBg ?? 0,
-                                     bolusIOB: iobMilliunits ?? 0),
+                try InitiateBolusRequest(validating: planTotalMU, bolusID: bolusId, bolusTypeBitmask: planBits,
+                                         foodVolume: planFoodMU, correctionVolume: planCorrectionMU,
+                                         bolusCarbs: Int(carbGrams), bolusBG: carbBg ?? 0,
+                                         bolusIOB: iobMilliunits ?? 0),
                 authenticationKey: authKey, pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: true)
         } catch { print("[carb-bolus] initiate failed: \(error)") }
     }
