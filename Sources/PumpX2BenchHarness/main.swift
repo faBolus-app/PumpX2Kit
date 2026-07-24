@@ -60,6 +60,7 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
     var iobMilliunits: UInt32?
     var haveTime = false
     var planTotalMU: UInt32 = 0, planFoodMU: UInt32 = 0, planCorrectionMU: UInt32 = 0, planBits = 0
+    var carbPlan: BenchBolusPlanner.Plan?
 
     init(mode: Mode) {
         self.mode = mode
@@ -160,27 +161,29 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
     /// begin the signed permission→initiate flow (carbs → units, the way controlX2 does).
     func maybeComputeCarbBolus() {
         guard isCarbMode, !permissionSent, haveTime, let calc, let iobMU = iobMilliunits else { return }
-        let carbRatio = Double(calc.carbRatio)                 // ×1000 g/u
-        let foodMU = carbRatio > 0 ? Int((carbGrams * 1_000_000 / carbRatio).rounded()) : 0
-        var rawCorrMU = 0
-        if let bg = carbBg, calc.isf > 0 {
-            rawCorrMU = max(0, Int((Double(bg - calc.targetBg) * 1000 / Double(calc.isf)).rounded()))
-        }
-        let corrAfterIob = max(0, rawCorrMU - Int(iobMU))
-        var total = Int((Double(foodMU + corrAfterIob) / 50).rounded()) * 50   // 0.05 u step
-        total = min(max(total, 0), 2000)                       // bench clamp
-        planFoodMU = UInt32(min(foodMU, total))
-        planCorrectionMU = UInt32(total) - planFoodMU
-        planTotalMU = UInt32(total)
-        // PX-06: FOOD1 for a carb bolus (not FOOD1|FOOD2); shared with production via the library helper.
-        planBits = InitiateBolusRequest.typeBitmask(hasCarbs: carbGrams > 0,
-                                                    hasCorrection: corrAfterIob > 0, isExtended: false)
+        // Oracle-faithful planner (round-2 P1): signed BG correction (below target REDUCES the dose),
+        // positive-IOB offset, two-decimal HALF_UP per component, zero floor, 0.05 U snap, bench cap.
+        let profile = BenchBolusPlanner.Profile(carbRatioGramsPerUnit: calc.carbRatioGramsPerUnit,
+                                                isfMgdlPerUnit: calc.isf, targetBgMgdl: calc.targetBg,
+                                                iobUnits: Double(iobMU) / 1000.0)
+        let plan = BenchBolusPlanner.plan(carbsGrams: carbGrams, bgMgdl: carbBg, profile: profile,
+                                          benchCapMilliunits: 2000)   // tight 2.0 U saline bound
+        carbPlan = plan
+        planFoodMU = plan.foodMilliunits
+        planCorrectionMU = plan.correctionMilliunits
+        planTotalMU = plan.totalMilliunits
+        planBits = plan.bitmask
 
         print(String(format: "[carb-bolus] carbs=%.0fg bg=%@ | carbRatio=%.1f g/u ISF=%d target=%d IOB=%.2fu",
                      carbGrams, carbBg.map { "\($0)" } ?? "—",
                      calc.carbRatioGramsPerUnit, calc.isf, calc.targetBg, Double(iobMU) / 1000.0))
-        print(String(format: "[carb-bolus] → food %.2fu + correction %.2fu = TOTAL %.2f u (verify against the pump's calculator)",
-                     Double(planFoodMU) / 1000.0, Double(planCorrectionMU) / 1000.0, Double(planTotalMU) / 1000.0))
+        print(String(format: "[carb-bolus] components: fromCarbs %.2fu  fromBG %+.2fu  fromIOB %+.2fu  → oracle total %.2fu%@",
+                     plan.fromCarbsUnits, plan.fromBGUnits, plan.fromIOBUnits, plan.oracleTotalUnits,
+                     plan.sanityFailed ? "  [SANITY FAILED → 0]" : ""))
+        // Snapshot the ENTIRE planned request cargo, not just the type byte, for pump comparison.
+        print(String(format: "[carb-bolus] request: total %.2fu (food %.2fu + correction %.2fu) bits 0x%02X carbs %dg bg %d iob %.2fu",
+                     Double(planTotalMU) / 1000.0, Double(planFoodMU) / 1000.0, Double(planCorrectionMU) / 1000.0,
+                     planBits, plan.carbGrams, plan.bgMgdl, Double(plan.iobMilliunits) / 1000.0))
         guard planTotalMU >= 50 else {
             print("[carb-bolus] computed dose < 0.05 u — nothing to deliver. Stopping.")
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { exit(0) }
@@ -193,13 +196,11 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
     func initiateCarbBolus(bolusId: Int) {
         currentBolusId = bolusId
         print(String(format: "[carb-bolus] initiating %.2f u SALINE (bolusId %d)…", Double(planTotalMU) / 1000.0, bolusId))
+        guard let plan = carbPlan else { print("[carb-bolus] no plan computed"); return }
         do {
-            try client.send(
-                try InitiateBolusRequest(validating: planTotalMU, bolusID: bolusId, bolusTypeBitmask: planBits,
-                                         foodVolume: planFoodMU, correctionVolume: planCorrectionMU,
-                                         bolusCarbs: Int(carbGrams), bolusBG: carbBg ?? 0,
-                                         bolusIOB: iobMilliunits ?? 0),
-                authenticationKey: authKey, pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: true)
+            // Build the full, validated request from the SAME plan the snapshot printed (PX-07).
+            try client.send(try BenchBolusPlanner.request(for: plan, bolusID: bolusId),
+                            authenticationKey: authKey, pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: true)
         } catch { print("[carb-bolus] initiate failed: \(error)") }
     }
 
