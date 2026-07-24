@@ -90,8 +90,11 @@ public final class PumpBLEClient: NSObject {
     /// / `.allowDelivery`) from leaking past the single operation it was granted for. Callers still run
     /// under their own serialization; the transport additionally fails-closed to `.readOnly` on any
     /// disconnect/error, so even a crash mid-body cannot carry the elevation into the next connection.
+    /// `body` is `@MainActor` so its (possibly non-Sendable) result stays on this actor and isn't sent
+    /// across an actor boundary — Swift 6 strict concurrency (the CI toolchain) rejects the nonisolated
+    /// form. Same idiom as `TandemBackend.withPumpTx`.
     @discardableResult
-    public func withWritePolicy<T>(_ policy: WritePolicy, _ body: () async throws -> T) async rethrows -> T {
+    public func withWritePolicy<T>(_ policy: WritePolicy, _ body: @MainActor () async throws -> T) async rethrows -> T {
         writePolicy = policy
         defer { writePolicy = .readOnly }
         return try await body()
