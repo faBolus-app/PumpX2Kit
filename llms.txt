@@ -18,3 +18,12 @@ working guidance, use:
 
 The one rule that matters most: **never change message bytes without a matching oracle-parity test**,
 and `ResponseParser` dispatches on **(characteristic, opcode)** — opcodes are not globally unique.
+
+Two more facts you need before touching safety code:
+- **Write policy is risk-tiered, not a boolean.** `WritePolicy` has `.readOnly`, `.allowBenignControl`
+  (dismiss-alert / find-my-pump — no therapy change), `.allowNonDelivery`, and `.allowDelivery`; `send()`
+  enforces `message.operationRisk ≤ policy.maxRisk` (`OperationRisk`: read < benign < settings <
+  destructive < delivery). Don't reach for `.allowDelivery` when a benign tier suffices.
+- **Oracle-parity tests need the Java oracle (JDK 21).** `scripts/test.sh` runs the vendored oracle; note
+  the current default behavior if the oracle/JDK is absent (see `AGENTS.md`) — a fail-closed CI mode
+  (assert the expected oracle case count ran) is tracked as PX-09.
