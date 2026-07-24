@@ -83,6 +83,38 @@ import PumpX2Messages
         assertAllowed(client, calib)                            // but is permitted at the settings tier
     }
 
+    // MARK: - PX-03/04: scoped one-operation policy elevation always restores .readOnly
+
+    @MainActor @Test func withWritePolicyElevatesThenRestoresOnSuccess() async {
+        let client = PumpBLEClient()
+        var sawInside: PumpBLEClient.WritePolicy?
+        await client.withWritePolicy(.allowDelivery) { sawInside = client.writePolicy }
+        #expect(sawInside == .allowDelivery)     // elevated inside the scope
+        #expect(client.writePolicy == .readOnly) // restored after
+    }
+
+    @MainActor @Test func withWritePolicyRestoresReadOnlyOnThrow() async {
+        struct Boom: Error {}
+        let client = PumpBLEClient()
+        client.writePolicy = .allowBenignControl   // even a non-.readOnly prior must end at .readOnly
+        try? await client.withWritePolicy(.allowDestructive) {
+            #expect(client.writePolicy == .allowDestructive)
+            throw Boom()
+        }
+        #expect(client.writePolicy == .readOnly)   // never left elevated after a throw
+    }
+
+    /// Cancellation surfaces to the scoped body as a thrown `CancellationError`; the restoring defer still
+    /// runs, so the policy ends at .readOnly (same guarantee as any other throw — timeout/disconnect
+    /// surface as `TxError` from the awaited send and are covered by the coordinator suite).
+    @MainActor @Test func withWritePolicyRestoresReadOnlyWhenBodyCancelled() async {
+        let client = PumpBLEClient()
+        try? await client.withWritePolicy(.allowDelivery) {
+            throw CancellationError()
+        }
+        #expect(client.writePolicy == .readOnly)
+    }
+
     /// The operation-risk taxonomy classifies representative messages as expected (audit P-01).
     @Test func operationRiskClassification() {
         #expect(InitiateBolusRequest(totalVolume: 1000, bolusID: 1, bolusTypeBitmask: 1).operationRisk == .delivery)

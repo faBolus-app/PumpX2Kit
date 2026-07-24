@@ -39,7 +39,10 @@ public struct InitiateBolusRequest: Message {
         case bgOutOfRange(Int)                   // 0...65535
         case invalidTypeBitmask(Int)             // nonzero, only known bits
         case extendedIncoherent(String)          // EXTENDED bit vs extendedVolume/extendedSeconds mismatch
-        case componentExceedsTotal(String)       // food/correction volume larger than the whole dose
+        case componentExceedsTotal(String)       // food+correction volume larger than the whole dose
+        case foodBitIncoherent(String)           // not exactly one of FOOD1/FOOD2, or carbs>0 without FOOD1
+        case correctionIncoherent(String)        // CORRECTION bit without a correction component
+        case arithmeticOverflow(String)          // total+extended or food+correction overflows UInt32
     }
 
     /// Validates all bounds + cross-field invariants without constructing anything (PX-07).
@@ -57,9 +60,31 @@ public struct InitiateBolusRequest: Message {
         guard bolusTypeBitmask != 0, (bolusTypeBitmask & ~knownTypeBits) == 0 else {
             throw ValidationError.invalidTypeBitmask(bolusTypeBitmask)
         }
+        // Exactly one food-type bit: FOOD1 (carbs) XOR FOOD2 (no carbs) — the reference always sets one,
+        // never both and never neither.
+        let hasFood1 = (bolusTypeBitmask & bitFood1) != 0
+        let hasFood2 = (bolusTypeBitmask & bitFood2) != 0
+        guard hasFood1 != hasFood2 else {
+            throw ValidationError.foodBitIncoherent("exactly one of FOOD1/FOOD2 required (mask \(bolusTypeBitmask))")
+        }
+        // Recording carbs implies a FOOD1 (carb) bolus — FOOD2 means "no carbs", so carb metadata on a
+        // FOOD2 bolus is incoherent.
+        guard bolusCarbs <= 0 || hasFood1 else {
+            throw ValidationError.foodBitIncoherent("bolusCarbs \(bolusCarbs) requires FOOD1, not FOOD2")
+        }
+        // A CORRECTION bit must carry a correction component.
+        if (bolusTypeBitmask & bitCorrection) != 0 {
+            guard correctionVolume > 0 else {
+                throw ValidationError.correctionIncoherent("CORRECTION set but correctionVolume is 0")
+            }
+        }
+        // Checked whole dose = total + extended (reject a silent UInt32 wrap).
+        let (whole, wholeOverflow) = totalVolume.addingReportingOverflow(extendedVolume)
+        guard !wholeOverflow else {
+            throw ValidationError.arithmeticOverflow("totalVolume + extendedVolume overflows UInt32")
+        }
         // Minimum dispensable dose (standard OR extended threshold).
-        guard totalVolume >= minBolusMilliunits
-                || (totalVolume &+ extendedVolume) >= minExtendedBolusMilliunits else {
+        guard totalVolume >= minBolusMilliunits || whole >= minExtendedBolusMilliunits else {
             throw ValidationError.doseTooSmall(totalMilliunits: totalVolume, extendedMilliunits: extendedVolume)
         }
         // Extended coherence: the EXTENDED bit and the extended fields must agree.
@@ -73,13 +98,13 @@ public struct InitiateBolusRequest: Message {
                 throw ValidationError.extendedIncoherent("extended fields set without the EXTENDED bit")
             }
         }
-        // Component volumes can't exceed the whole dose.
-        let whole = totalVolume &+ extendedVolume
-        guard foodVolume <= whole else {
-            throw ValidationError.componentExceedsTotal("foodVolume \(foodVolume) > total \(whole)")
+        // Component volumes summed can't exceed the whole dose (checked; subsumes each ≤ whole).
+        let (componentSum, componentOverflow) = foodVolume.addingReportingOverflow(correctionVolume)
+        guard !componentOverflow else {
+            throw ValidationError.arithmeticOverflow("foodVolume + correctionVolume overflows UInt32")
         }
-        guard correctionVolume <= whole else {
-            throw ValidationError.componentExceedsTotal("correctionVolume \(correctionVolume) > total \(whole)")
+        guard componentSum <= whole else {
+            throw ValidationError.componentExceedsTotal("food+correction \(componentSum) > total+extended \(whole)")
         }
     }
 

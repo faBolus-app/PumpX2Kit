@@ -82,6 +82,72 @@ import PumpX2Messages
         }
     }
 
+    // MARK: - round-2: coherence + overflow-checked component arithmetic
+
+    /// Exactly one of FOOD1 / FOOD2 — both set, or neither food bit, is rejected.
+    @Test func rejectsBadFoodBits() {
+        typealias R = InitiateBolusRequest
+        #expect(throws: E.foodBitIncoherent("exactly one of FOOD1/FOOD2 required (mask \(R.bitFood1 | R.bitFood2))")) {
+            _ = try R(validating: 1000, bolusID: 1, bolusTypeBitmask: R.bitFood1 | R.bitFood2, foodVolume: 1000)
+        }
+        #expect(throws: E.self) {   // CORRECTION only, no food bit
+            _ = try R(validating: 1000, bolusID: 1, bolusTypeBitmask: R.bitCorrection, correctionVolume: 1000)
+        }
+    }
+
+    /// Recording carbs on a FOOD2 ("no carbs") bolus is incoherent.
+    @Test func rejectsCarbsWithoutFood1() {
+        typealias R = InitiateBolusRequest
+        #expect(throws: E.self) {
+            _ = try R(validating: 1000, bolusID: 1, bolusTypeBitmask: R.bitFood2, foodVolume: 1000, bolusCarbs: 30)
+        }
+    }
+
+    /// A CORRECTION bit with no correction component is incoherent.
+    @Test func rejectsCorrectionBitWithoutComponent() {
+        typealias R = InitiateBolusRequest
+        #expect(throws: E.correctionIncoherent("CORRECTION set but correctionVolume is 0")) {
+            _ = try R(validating: 1000, bolusID: 1, bolusTypeBitmask: R.bitFood1 | R.bitCorrection,
+                      foodVolume: 1000, correctionVolume: 0)
+        }
+    }
+
+    /// food + correction each ≤ total but SUMMING to more than the whole dose is rejected.
+    @Test func rejectsComponentSumExceedingTotal() {
+        typealias R = InitiateBolusRequest
+        #expect(throws: E.self) {
+            _ = try R(validating: 1000, bolusID: 1, bolusTypeBitmask: R.bitFood1 | R.bitCorrection,
+                      foodVolume: 600, correctionVolume: 600)   // 1200 > 1000, but each < 1000
+        }
+    }
+
+    /// total + extended overflowing UInt32 is caught (checked arithmetic), not silently wrapped.
+    @Test func rejectsArithmeticOverflow() {
+        typealias R = InitiateBolusRequest
+        #expect(throws: E.arithmeticOverflow("totalVolume + extendedVolume overflows UInt32")) {
+            _ = try R(validating: UInt32.max, bolusID: 1, bolusTypeBitmask: R.bitFood1 | R.bitExtended,
+                      foodVolume: 0, correctionVolume: 0, extendedVolume: 100, extendedSeconds: 60)
+        }
+    }
+
+    /// Every ACCEPTED request round-trips its cargo fields without truncation (property-style sweep).
+    @Test func acceptedRequestsRoundTripWithoutTruncation() throws {
+        typealias R = InitiateBolusRequest
+        for total: UInt32 in [50, 1000, 12345, 60000, 250000] {
+            for carbs in [0, 1, 250, 65535] {
+                let mask = carbs > 0 ? R.bitFood1 : R.bitFood2
+                let req = try R(validating: total, bolusID: 65535, bolusTypeBitmask: mask,
+                                foodVolume: min(total, 40000), correctionVolume: 0,
+                                bolusCarbs: carbs, bolusBG: 400, bolusIOB: 1234)
+                #expect(req.totalVolume == total)
+                #expect(req.bolusCarbs == carbs)
+                #expect(req.bolusBG == 400)
+                #expect(req.bolusIOB == 1234)
+                #expect(req.bolusTypeBitmask == mask)
+            }
+        }
+    }
+
     // MARK: - PX-06: the shared type-bitmask derivation (used by the bench harness AND production)
 
     /// A carb bolus is FOOD1 (1) — NOT FOOD1|FOOD2 (9). This is the exact bug the old bench harness had

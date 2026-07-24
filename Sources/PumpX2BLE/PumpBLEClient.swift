@@ -78,7 +78,24 @@ public final class PumpBLEClient: NSObject {
     /// Current write policy. Defaults to `.readOnly`; callers must opt in explicitly. Reset to
     /// `.readOnly` fail-closed by the library on every disconnect/drop/restore/error (PX-04) — a caller
     /// must not rely on an elevated policy surviving a transaction or connection change.
+    ///
+    /// Prefer the scoped `withWritePolicy` over assigning this directly: it guarantees the elevation is
+    /// short-lived and always restored to `.readOnly`, so a thrown/cancelled operation can't leave an
+    /// elevated policy standing (PX-03/04).
     public var writePolicy: WritePolicy = .readOnly
+
+    /// Run `body` with the write policy elevated to `policy` for exactly this one operation, then ALWAYS
+    /// restore `.readOnly` — on success, throw, or task cancellation (PX-03/04). This is the sanctioned way
+    /// to authorize a signed op: it prevents an arbitrary long-lived elevation (especially `.allowDestructive`
+    /// / `.allowDelivery`) from leaking past the single operation it was granted for. Callers still run
+    /// under their own serialization; the transport additionally fails-closed to `.readOnly` on any
+    /// disconnect/error, so even a crash mid-body cannot carry the elevation into the next connection.
+    @discardableResult
+    public func withWritePolicy<T>(_ policy: WritePolicy, _ body: () async throws -> T) async rethrows -> T {
+        writePolicy = policy
+        defer { writePolicy = .readOnly }
+        return try await body()
+    }
 
     /// Pure authorization decision (PX-02), separated from readiness/transport so it is deterministically
     /// testable and cannot be masked by `.notReady`. Returns the exact `.writeBlocked` error a policy
