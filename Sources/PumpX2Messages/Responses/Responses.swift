@@ -861,6 +861,33 @@ public struct HomeScreenMirrorResponse: ResponseMessage {
         }
     }
     public mutating func parse(_ raw: [UInt8]) { self = HomeScreenMirrorResponse(cargo: raw) }
+
+    /// The **pump's own** CGM trend icon. This is the authoritative trend: it is the glyph the pump is
+    /// displaying on its home screen, so rendering it cannot disagree with the pump.
+    ///
+    /// Prefer this over deriving an arrow from `CurrentEgvGuiDataV2Response.trendRate`: a client-side
+    /// derivation has to guess Tandem's bucket boundaries, and — critically — has no way to express
+    /// `noArrow`, which the pump uses whenever it has no trend to show. Ids match upstream
+    /// `HomeScreenMirrorResponse.CGMTrendIcon`.
+    public enum CGMTrendIcon: Int, Sendable {
+        case noArrow = 0, doubleUp = 1, up = 2, upRight = 3, flat = 4, downRight = 5, down = 6, doubleDown = 7
+    }
+    public var cgmTrendIcon: CGMTrendIcon? { CGMTrendIcon(rawValue: cgmTrendIconId) }
+
+    /// The pump's trend as a Unicode arrow, or `""` when the pump is showing **no arrow** — including
+    /// for an unrecognized icon id, because inventing a direction is worse than showing none.
+    public var cgmTrendArrow: String {
+        switch cgmTrendIcon {
+        case .doubleUp:   return "⇈"
+        case .up:         return "↑"
+        case .upRight:    return "↗"
+        case .flat:       return "→"
+        case .downRight:  return "↘"
+        case .down:       return "↓"
+        case .doubleDown: return "⇊"
+        case .noArrow, .none: return ""
+        }
+    }
 }
 
 /// Temp-basal-rate status. `response/currentStatus/TempRateStatusResponse` (op 31, 16B).
@@ -1003,17 +1030,49 @@ public struct CurrentEgvGuiDataV2Response: ResponseMessage {
     public mutating func parse(_ raw: [UInt8]) { self = CurrentEgvGuiDataV2Response(cargo: raw) }
     /// `trendRate` is a signed byte in 0.1 mg/dL/min units (matches the pump's ±12.7 range).
     public var trendRateMgDlPerMin: Double { Double(trendRate) / 10.0 }
-    /// Dexcom-style 7-category trend arrow, matching the pump display.
-    public var trendArrow: String {
-        let r = trendRateMgDlPerMin
+    /// `true` when `trendRate` is a **sentinel** rather than a real rate.
+    ///
+    /// Dexcom-family encodings reserve the extreme signed-byte values for "rate unavailable"; this
+    /// project's own G6 decoder guards for exactly that (`DexcomG6Kit.GlucoseRxMessage`:
+    /// `guard glucose.trend > Int8.min, glucose.trend < Int8.max`). Without this guard `0x7f` decodes
+    /// as +12.7 mg/dL/min and reads as a rapid rise — the mechanism behind the reported "app shows
+    /// double-up when the pump shows no arrow" defect.
+    ///
+    /// Unverified against a pump capture: the sentinel value is inferred from the sibling Dexcom
+    /// decoder and from the upstream reference, not confirmed on hardware.
+    public var trendRateIsUnavailable: Bool {
+        trendRate >= Int(Int8.max) || trendRate <= Int(Int8.min)
+    }
+
+    /// The trend rate, or `nil` when the pump has no usable rate — either the EGV frame itself is not
+    /// valid (`hasValidReading` is false for status INVALID/UNAVAILABLE) or the rate is a sentinel.
+    public var trendRateIfKnown: Double? {
+        guard hasValidReading, !trendRateIsUnavailable else { return nil }
+        return trendRateMgDlPerMin
+    }
+
+    /// A trend arrow derived client-side from `trendRate`, or `nil` when the rate is unknown.
+    ///
+    /// **Prefer `HomeScreenMirrorResponse.cgmTrendArrow`** — the pump's own home-screen icon, which by
+    /// construction agrees with the pump display and can say "no arrow". This derivation has to guess
+    /// Tandem's bucket boundaries, so it can disagree with the pump. Retained only so a caller that has
+    /// not yet polled `HomeScreenMirrorRequest` has something to fall back on, and it returns `nil`
+    /// rather than a fabricated direction whenever the rate is not known.
+    public var trendArrow: String? {
+        guard let r = trendRateIfKnown else { return nil }
+        // Symmetric bands, and no catch-all: previously `default` swallowed everything on the rising
+        // side, so any unclassifiable value became a double-up.
+        // |r| >= 3 is "rapid" in BOTH directions. It previously was not: -3.0 matched the single-arrow
+        // band while +3.0 fell through to the catch-all double-up.
         switch r {
-        case ..<(-3): return "⇊"   // falling rapidly (> 3 mg/dL/min down)
-        case (-3)..<(-2): return "↓"   // falling
-        case (-2)..<(-1): return "↘"   // falling slightly
-        case (-1)...1: return "→"      // steady
-        case 1..<2: return "↗"         // rising slightly
-        case 2..<3: return "↑"         // rising
-        default: return "⇈"            // rising rapidly
+        case ...(-3):      return "⇊"   // falling rapidly
+        case (-3)..<(-2):  return "↓"   // falling
+        case (-2)..<(-1):  return "↘"   // falling slightly
+        case (-1)...1:     return "→"   // steady
+        case 1..<2:        return "↗"   // rising slightly
+        case 2..<3:        return "↑"   // rising
+        case 3...:         return "⇈"   // rising rapidly
+        default:           return nil   // unreachable for a finite rate; never guess
         }
     }
     /// EGV status per upstream: 0=INVALID, 1=VALID, 2=LOW, 3=HIGH, 4=UNAVAILABLE.
