@@ -361,6 +361,24 @@ import Testing
         #expect(msg.bolusId == 10650)
     }
 
+    /// R3-G decode-side guard: a short/garbage InitiateBolusResponse frame must be REJECTED by the parser
+    /// (throwing `ParseError`), never trap. The typed `InitiateBolusResponse.init(cargo:)` reads absolute
+    /// offsets 0/1/5, so this is the production invariant that guarantees it only ever sees ≥ 6 cargo bytes
+    /// — the most safety-critical inbound message (the bolus ack) cannot be built from a truncated frame.
+    @Test func truncatedInitiateBolusResponseRejectedNonTrapping() {
+        let op = InitiateBolusResponse.props.opCode
+        // (a) declared length 26 → after the 24-byte HMAC strip, cargo = 2 bytes (< the required 6);
+        // (b) declared length 0 → cargo = 0 bytes. Both are internally consistent (valid length + CRC).
+        let short = [op, 0, 26] as [UInt8] + [UInt8](repeating: 0, count: 26)
+        let empty = [op, 0, 0] as [UInt8]
+        for body in [short, empty] {
+            let frame = body + Bytes.calculateCRC16(body)
+            #expect(throws: ResponseParser.ParseError.self) {
+                _ = try ResponseParser.parse(frame: frame, characteristic: .control)
+            }
+        }
+    }
+
     @Test func egvGuiDataV2ResponseParses() throws {
         // [bgReadingTimestampSeconds, cgmReading, egvStatusId, trendRate]
         // egvStatusId 1 = VALID
