@@ -131,4 +131,70 @@ import PumpX2Messages
         let bFrame = try await b.value
         #expect(bFrame.first == 0x05)
     }
+
+    // MARK: - R3-D: delivery-class serialization
+
+    /// A second delivery-class (`serialized`) transaction is rejected `.busy` — BEFORE any write — while
+    /// one is outstanding, so two identical in-flight delivery opcodes can never cross-resolve. A
+    /// non-serialized read is unaffected and still runs concurrently.
+    @MainActor @Test func serializedRejectsSecondDeliveryWhileOneInFlight() async throws {
+        let coord = PumpTransactionCoordinator()
+        var writes = 0
+        let first = Task { @MainActor in
+            try await coord.perform(expectedResponseOn: .control, opCode: 0x10, deadline: 5,
+                                    serialized: true) { writes += 1; return 1 }
+        }
+        while !coord.hasSerializedInFlight { await Task.yield() }
+        #expect(writes == 1)
+
+        // Second serialized command → `.busy`, and it must NOT have written.
+        await #expect(throws: PumpTransactionCoordinator.TxError.busy) {
+            try await coord.perform(expectedResponseOn: .control, opCode: 0x11, deadline: 5,
+                                    serialized: true) { writes += 1; return 2 }
+        }
+        #expect(writes == 1)
+
+        // A concurrent non-serialized read is still allowed.
+        let read = Task { @MainActor in
+            try await coord.perform(expectedResponseOn: .control, opCode: 0x20, deadline: 5,
+                                    serialized: false) { writes += 1; return 3 }
+        }
+        while coord.inFlightCount < 2 { await Task.yield() }
+        #expect(writes == 2)
+
+        _ = coord.ingest(frame: [0x10, 1, 0], on: .control)
+        _ = coord.ingest(frame: [0x20, 3, 0], on: .control)
+        _ = try await first.value
+        _ = try await read.value
+    }
+
+    /// Once the outstanding delivery-class transaction resolves, another is admitted — the block is
+    /// per-in-flight, not a permanent lock.
+    @MainActor @Test func serializedAdmittedAgainAfterFirstResolves() async throws {
+        let coord = PumpTransactionCoordinator()
+        let first = await launchAndRegister(coord, on: .control, opCode: 0x10)   // (non-serialized helper)
+        // Make it serialized-in-flight by resolving the helper, then run a real serialized pair in order.
+        _ = coord.ingest(frame: [0x10, 7, 0], on: .control)
+        _ = try await first.value
+
+        var writes = 0
+        let a = Task { @MainActor in
+            try await coord.perform(expectedResponseOn: .control, opCode: 0x30, deadline: 5,
+                                    serialized: true) { writes += 1; return 1 }
+        }
+        while !coord.hasSerializedInFlight { await Task.yield() }
+        _ = coord.ingest(frame: [0x30, 1, 0], on: .control)
+        _ = try await a.value
+        #expect(!coord.hasSerializedInFlight)
+
+        // A second serialized command now proceeds (the first is done).
+        let b = Task { @MainActor in
+            try await coord.perform(expectedResponseOn: .control, opCode: 0x31, deadline: 5,
+                                    serialized: true) { writes += 1; return 2 }
+        }
+        while !coord.hasSerializedInFlight { await Task.yield() }
+        #expect(writes == 2)
+        _ = coord.ingest(frame: [0x31, 2, 0], on: .control)
+        _ = try await b.value
+    }
 }

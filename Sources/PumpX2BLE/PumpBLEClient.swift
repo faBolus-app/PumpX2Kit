@@ -292,14 +292,16 @@ public final class PumpBLEClient: NSObject {
         pumpTimeSinceReset: UInt32 = 0,
         allowInsulinDelivery: Bool = false,
         responseOpCode: UInt8? = nil,
-        deadline: TimeInterval
+        deadline: TimeInterval,
+        serialized: Bool = false
     ) async throws -> [UInt8] {
         guard let expectedOpCode = responseOpCode ?? message.props.responseOpCode else {
             throw ClientError.notReady
         }
         let characteristic = message.characteristic
         return try await transactions.perform(
-            expectedResponseOn: characteristic, opCode: expectedOpCode, deadline: deadline
+            expectedResponseOn: characteristic, opCode: expectedOpCode, deadline: deadline,
+            serialized: serialized
         ) {
             try self.send(message,
                           authenticationKey: authenticationKey,
@@ -356,6 +358,14 @@ extension PumpBLEClient: CBCentralManagerDelegate {
                 } else if peripheral == nil && wasScanning {
                     startScan()
                 }
+            } else if central.state != .poweredOn {
+                // R3-D: any non-usable central state — poweredOff, unauthorized, unsupported, resetting —
+                // means the link is gone. `didDisconnectPeripheral` does NOT necessarily fire for a BT
+                // power-off, so without this an outstanding transaction would hang to its deadline and an
+                // elevated write policy would survive the outage. Fail closed: reset to read-only and
+                // resume every pending transaction with `.connectionLost` (a bolus caller maps that to
+                // indeterminate — never a fabricated success).
+                failClosed(resumePending: true)
             }
         }
     }
