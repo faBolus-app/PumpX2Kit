@@ -31,6 +31,12 @@ public final class PumpTransactionCoordinator {
         case connectionLost
         /// The transaction was explicitly cancelled by the owner.
         case cancelled
+        /// A delivery-class (`serialized`) transaction was requested while another was still outstanding.
+        /// Round-3 §5.2.5 / R3-D: at most ONE delivery-class command may be in flight, so two identical
+        /// in-flight delivery opcodes can never cross-resolve. Rejected fail-closed BEFORE any bytes are
+        /// written — nothing was sent, so the caller may retry once the first resolves. Deliberately a
+        /// rejection, not a queue: silently queuing a second bolus is the very hazard §5.3 forbids.
+        case busy
     }
 
     private struct Pending {
@@ -38,8 +44,10 @@ public final class PumpTransactionCoordinator {
         let expectedCharacteristic: Characteristic
         let expectedOpCode: UInt8
         /// The wire txId returned by the writer, for logging/ownership (correlation is by response
-        /// opcode; txId is retained so a future stricter match can assert it).
+        /// opcode; txId is retained so a future stricter match can assert it — see the R3-D note below).
         let txId: UInt8
+        /// Delivery-class: at most one such transaction may be outstanding at a time (R3-D).
+        let serialized: Bool
         let continuation: CheckedContinuation<[UInt8], Error>
         var deadline: Task<Void, Never>?
     }
@@ -52,12 +60,19 @@ public final class PumpTransactionCoordinator {
     /// Number of transactions currently awaiting a response (for tests / diagnostics).
     public var inFlightCount: Int { pending.count }
 
+    /// Whether a delivery-class (`serialized`) transaction is currently outstanding (tests / diagnostics).
+    public var hasSerializedInFlight: Bool { pending.contains { $0.serialized } }
+
     /// Sends a request and awaits its correlated response frame.
     ///
     /// - Parameters:
     ///   - expectedResponseOn: the characteristic the reply is expected on.
     ///   - opCode: the response opcode to correlate (normally `request.props.responseOpCode`).
     ///   - deadline: seconds before the transaction resolves `.timedOut`.
+    ///   - serialized: delivery-class (R3-D). When true, the call is rejected with `.busy` — before any
+    ///     bytes are written — if another serialized transaction is already outstanding, so at most one
+    ///     delivery command is ever in flight and two identical delivery opcodes can't cross-resolve.
+    ///     Non-serialized reads (status polling) are unaffected and may still run concurrently.
     ///   - write: emits the request bytes and returns the wire txId. Runs *before* the continuation
     ///     suspends, so a synchronous failure (authorization / not-ready) is thrown to the caller and
     ///     never registers a pending transaction.
@@ -66,8 +81,14 @@ public final class PumpTransactionCoordinator {
         expectedResponseOn characteristic: Characteristic,
         opCode: UInt8,
         deadline: TimeInterval,
+        serialized: Bool = false,
         write: () throws -> UInt8
     ) async throws -> [UInt8] {
+        // R3-D: reject a second delivery-class command BEFORE writing anything. Checked before the write
+        // so no bytes go out and no pending is registered — a clean fail-closed the caller can retry.
+        if serialized && pending.contains(where: { $0.serialized }) { throw TxError.busy }
+        // Pre-write cancellation check: if the owning task was already cancelled, do not emit bytes.
+        try Task.checkCancellation()
         let txId = try write()   // may throw synchronously (authorization/notReady) → no pending registered
         let id = nextId
         nextId &+= 1
@@ -77,7 +98,7 @@ public final class PumpTransactionCoordinator {
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (cont: CheckedContinuation<[UInt8], Error>) in
                 var entry = Pending(id: id, expectedCharacteristic: characteristic, expectedOpCode: opCode,
-                                    txId: txId, continuation: cont, deadline: nil)
+                                    txId: txId, serialized: serialized, continuation: cont, deadline: nil)
                 entry.deadline = Task { [weak self] in
                     let ns = UInt64((deadline * 1_000_000_000).rounded())
                     try? await Task.sleep(nanoseconds: ns)
@@ -95,6 +116,13 @@ public final class PumpTransactionCoordinator {
     /// `(characteristic, opCode)`, that transaction resolves and this returns `true` (the frame was
     /// consumed). Returns `false` if no transaction awaited it (the caller should route it elsewhere,
     /// e.g. an unsolicited stream/status frame to a delegate).
+    // R3-D FOLLOW-UP (needs the bench): correlation here is by `(characteristic, opCode)` FIFO. The wire
+    // txId is `frame[1]`, and each `Pending` retains the request `txId`, so a STRICTER match
+    // (`… && frame[1] == entry.txId`) would let two identical in-flight opcodes coexist safely and drop
+    // the delivery-class serialization above. That upgrade is gated on confirming — on real hardware —
+    // that a Tandem response reliably ECHOES the request txId in `frame[1]`; neither the code nor the
+    // vendored oracle establishes it, and matching on a txId the pump does not echo would fail EVERY
+    // correlation. Until then, delivery-class serialization is the safe closure. See WIP-REGISTER.md.
     @discardableResult
     public func ingest(frame: [UInt8], on characteristic: Characteristic) -> Bool {
         guard let opCode = frame.first else { return false }
