@@ -125,4 +125,127 @@ import Foundation
         #expect(!req.cargo.isEmpty)
         assertCoherent(p)
     }
+
+    /// The exact 37-byte cargo for a known plan — locks the planner's food/correction DECOMPOSITION and
+    /// bitmask into a specific request (the encoder itself is oracle-byte-locked by OracleParityTests /
+    /// InitiateBolusExtendedTests, so this pins what the *planner* chose, end to end). Round-trip parse too.
+    @Test func requestCargoIsByteLocked() throws {
+        let p = BenchBolusPlanner.plan(carbsGrams: 45, bgMgdl: 180, profile: profile(iob: 0.5))
+        let req = try BenchBolusPlanner.request(for: p, bolusID: 7)
+        let expected: [UInt8] = [
+            0x50, 0x14, 0x00, 0x00,   // totalVolume 5200
+            0x07, 0x00,               // bolusID 7
+            0x00, 0x00,               // reserved
+            0x03,                     // bitmask FOOD1|CORRECTION
+            0x94, 0x11, 0x00, 0x00,   // foodVolume 4500
+            0xBC, 0x02, 0x00, 0x00,   // correctionVolume 700
+            0x2D, 0x00,               // bolusCarbs 45
+            0xB4, 0x00,               // bolusBG 180
+            0xF4, 0x01, 0x00, 0x00,   // bolusIOB 500
+            0x00, 0x00, 0x00, 0x00,   // extendedVolume 0
+            0x00, 0x00, 0x00, 0x00,   // extendedSeconds 0
+            0x00, 0x00, 0x00, 0x00,   // extended3 0
+        ]
+        #expect(req.cargo == expected)
+        var round = InitiateBolusRequest(); round.parse(req.cargo)   // bidirectional: cargo → fields
+        #expect(round.totalVolume == 5200 && round.foodVolume == 4500 && round.correctionVolume == 700)
+        #expect(round.bolusCarbs == 45 && round.bolusBG == 180 && round.bolusIOB == 500)
+        #expect(round.bolusTypeBitmask == (F1 | CORR))
+    }
+
+    // MARK: R3-E — numeric-input safety (these inputs used to TRAP at the UInt32/Int conversions)
+
+    /// The 0.05 U → milliunit snap must never trap: non-finite → 0, and a dose beyond UInt32 clamps to
+    /// UInt32.max (the bench cap then bounds it). Finite in-range values are byte-identical to the old code.
+    @Test func milliunitsSnappedIsNonTrappingAndSnapsCorrectly() {
+        #expect(BenchBolusPlanner.milliunitsSnapped(4.0) == 4000)      // byte-identity spot-check
+        #expect(BenchBolusPlanner.milliunitsSnapped(0.0) == 0)
+        #expect(BenchBolusPlanner.milliunitsSnapped(-1.0) == 0)        // negative → 0
+        #expect(BenchBolusPlanner.milliunitsSnapped(0.024) == 0)       // below the 0.05 half-step → 0
+        #expect(BenchBolusPlanner.milliunitsSnapped(0.025) == 50)      // half rounds away → 0.05 U
+        #expect(BenchBolusPlanner.milliunitsSnapped(.nan) == 0)
+        #expect(BenchBolusPlanner.milliunitsSnapped(.infinity) == 0)
+        #expect(BenchBolusPlanner.milliunitsSnapped(-.infinity) == 0)
+        #expect(BenchBolusPlanner.milliunitsSnapped(1e12) == UInt32.max)  // huge finite clamps, no trap
+    }
+
+    /// Carb metadata → Int must never trap (Int is 32-bit on watchOS) and clamps to the uint16 ceiling.
+    @Test func safeCarbIntIsNonTrappingAndClamped() {
+        #expect(BenchBolusPlanner.safeCarbInt(45) == 45)
+        #expect(BenchBolusPlanner.safeCarbInt(nil) == 0)
+        #expect(BenchBolusPlanner.safeCarbInt(-5) == 0)
+        #expect(BenchBolusPlanner.safeCarbInt(.nan) == 0)
+        #expect(BenchBolusPlanner.safeCarbInt(.infinity) == 0)
+        #expect(BenchBolusPlanner.safeCarbInt(65535) == 65535)
+        #expect(BenchBolusPlanner.safeCarbInt(70000) == 65535)
+        #expect(BenchBolusPlanner.safeCarbInt(1e9) == 65535)          // used to overflow Int(_:) on watchOS
+    }
+
+    /// `plan()` end to end must fail SAFE (0 dose or capped) on every pathological input — never crash.
+    @Test func planDoesNotTrapOnPathologicalInput() {
+        // Non-finite carbs → sanity fail, zero dose, zero carb metadata.
+        let inf = BenchBolusPlanner.plan(carbsGrams: .infinity, bgMgdl: nil, profile: profile())
+        #expect(inf.sanityFailed && inf.totalMilliunits == 0 && inf.carbGrams == 0)
+        let nan = BenchBolusPlanner.plan(carbsGrams: .nan, bgMgdl: nil, profile: profile())
+        #expect(nan.sanityFailed && nan.totalMilliunits == 0)
+        // Huge FINITE carbs → not a sanity failure, but capped and carb metadata clamped to 65535.
+        let huge = BenchBolusPlanner.plan(carbsGrams: 1e9, bgMgdl: nil, profile: profile(), benchCapMilliunits: 2000)
+        #expect(!huge.sanityFailed && huge.totalMilliunits == 2000 && huge.carbGrams == 65535)
+        // Huge BG → dose capped at the default 25 U ceiling, no trap.
+        let hugeBg = BenchBolusPlanner.plan(carbsGrams: nil, bgMgdl: 1_000_000, profile: profile())
+        #expect(hugeBg.totalMilliunits == 25000)
+        // Non-finite IOB is ignored safely (inf → treated as no reduction below carbs; NaN → no IOB).
+        let infIob = BenchBolusPlanner.plan(carbsGrams: 30, bgMgdl: 170, profile: profile(iob: .infinity))
+        #expect(infIob.totalMilliunits == 3000 && infIob.iobMilliunits == 0)   // correction canceled, carbs stand
+        let nanIob = BenchBolusPlanner.plan(carbsGrams: 30, bgMgdl: 170, profile: profile(iob: .nan))
+        #expect(nanIob.totalMilliunits == 4000)                                // NaN IOB == no IOB
+    }
+
+    // MARK: R3-E — invalid-profile matrix (only carbRatio==0 was covered)
+
+    @Test func invalidIsfAndTargetSanityFailToZero() {
+        let badIsf = BenchBolusPlanner.Profile(carbRatioGramsPerUnit: 10, isfMgdlPerUnit: 0, targetBgMgdl: 120, iobUnits: 0)
+        let lowTarget = BenchBolusPlanner.Profile(carbRatioGramsPerUnit: 10, isfMgdlPerUnit: 50, targetBgMgdl: 30, iobUnits: 0)
+        let highTarget = BenchBolusPlanner.Profile(carbRatioGramsPerUnit: 10, isfMgdlPerUnit: 50, targetBgMgdl: 500, iobUnits: 0)
+        for bad in [badIsf, lowTarget, highTarget] {
+            let p = BenchBolusPlanner.plan(carbsGrams: 30, bgMgdl: 170, profile: bad)
+            #expect(p.sanityFailed && p.totalMilliunits == 0)
+        }
+    }
+
+    // MARK: R3-E — bench cap below the minimum dispensable dose
+
+    @Test func capBelowMinimumYieldsNonDeliverablePlan() {
+        let p = BenchBolusPlanner.plan(carbsGrams: 30, bgMgdl: nil, profile: profile(), benchCapMilliunits: 40)
+        #expect(p.totalMilliunits == 40)                              // capped below the 0.05 U (50 mu) floor
+        #expect(p.foodMilliunits + p.correctionMilliunits == p.totalMilliunits)
+        #expect(throws: InitiateBolusRequest.ValidationError.self) {  // request build refuses a sub-min dose
+            _ = try BenchBolusPlanner.request(for: p, bolusID: 1)
+        }
+    }
+
+    // MARK: R3-E — matrix cells the earlier suite missed
+
+    @Test func atTargetNoCarbsIsZeroFood2() {
+        let p = BenchBolusPlanner.plan(carbsGrams: nil, bgMgdl: 120, profile: profile())
+        #expect(p.totalMilliunits == 0 && p.bitmask == F2)
+        assertCoherent(p)
+    }
+
+    @Test func belowTargetWithPositiveIobFloorsAtZero() {
+        // The case belowTargetWithIobFloorsAtZero's NAME implied but did not exercise (its IOB was 0).
+        let p = BenchBolusPlanner.plan(carbsGrams: nil, bgMgdl: 100, profile: profile(iob: 1.0))
+        // fromBG (100-120)/50 = -0.40, fromIOB -1.00 → correction -1.40, no carbs → floored at 0.
+        #expect(p.totalMilliunits == 0)
+        assertCoherent(p)
+    }
+
+    @Test func carbsZeroBehavesLikeNil() {
+        let zero = BenchBolusPlanner.plan(carbsGrams: 0, bgMgdl: 170, profile: profile())
+        let none = BenchBolusPlanner.plan(carbsGrams: nil, bgMgdl: 170, profile: profile())
+        // No carb dose in either → FOOD2|CORRECTION, correction 1.00 U.
+        #expect(zero.totalMilliunits == 1000 && none.totalMilliunits == 1000)
+        #expect(zero.bitmask == (F2 | CORR) && none.bitmask == (F2 | CORR))
+        assertCoherent(zero); assertCoherent(none)
+    }
 }

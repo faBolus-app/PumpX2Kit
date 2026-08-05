@@ -49,8 +49,11 @@ secp256r1/SHA-256). The legacy 16-char path is retained only for older pumps.
   reported 0.10 u (id 1774); the **pump screen agreed**. Signed CancelBolus round-trips.
   Full delivery path (BLE + JPAKE + signed permission + signed initiate + status + cancel) is
   proven on the real pump, with every outgoing message byte-exact vs the cliparser oracle.
-- **Pending niceties:** mass/accuracy check at a larger dose; cancel *mid*-
-  delivery (extended/large bolus) for partial-delivery reporting.
+- **Pending niceties — BOOKED as one saline session, see [`docs/BENCH-SESSION-PLAN.md`](docs/BENCH-SESSION-PLAN.md):**
+  cancel *mid*-delivery (extended/large bolus) for partial-delivery reporting (group B indeterminate
+  case, WIP item 5); whether the pump echoes the request txId in `frame[1]` (WIP item 12, gates
+  retiring R3-D delivery-class serialization); and a mass/accuracy check at a larger dose. Bundled
+  because all three need the same pump+saline+Mac setup — run in one sitting, not piecemeal.
 
 ## Toolchain notes
 
