@@ -185,6 +185,20 @@ public final class PumpBLEClient: NSObject {
     private var reconnectTargetId: UUID?
     private static let reconnectBackoff: [TimeInterval] = [5, 10, 20, 30]
 
+    /// A reconnect delay with additive jitter (up to +50%) applied to a fixed ladder step. Without it,
+    /// a phone and pump both retrying/advertising on fixed intervals can lock into a beat pattern where
+    /// their scan and advertise windows repeatedly miss, stalling recovery; the jitter breaks that
+    /// lockstep. Bounded and never shorter than `base`, so it can't tighten the ladder — result is
+    /// always in `[base, 1.5·base]` (and exactly `base` when `base <= 0`).
+    nonisolated static func jitteredDelay(base: TimeInterval, using rng: inout some RandomNumberGenerator) -> TimeInterval {
+        guard base > 0 else { return base }
+        return base + TimeInterval.random(in: 0 ... base * 0.5, using: &rng)
+    }
+    nonisolated static func jitteredDelay(base: TimeInterval) -> TimeInterval {
+        var g = SystemRandomNumberGenerator()
+        return jitteredDelay(base: base, using: &g)
+    }
+
     public func disconnect() {
         intentionalDisconnect = true
         cancelReconnectWatchdog()
@@ -200,7 +214,8 @@ public final class PumpBLEClient: NSObject {
     }
 
     private func scheduleNextReconnectAttempt() {
-        let delay = Self.reconnectBackoff[min(reconnectAttempts, Self.reconnectBackoff.count - 1)]
+        let base = Self.reconnectBackoff[min(reconnectAttempts, Self.reconnectBackoff.count - 1)]
+        let delay = Self.jitteredDelay(base: base)   // break phone↔pump fixed-interval lockstep (group C)
         reconnectWatchdog?.invalidate()
         reconnectWatchdog = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.reconnectTick() }
