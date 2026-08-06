@@ -168,6 +168,31 @@ public final class PumpBLEClient: NSObject {
         central.connect(peripheral, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
     }
 
+    /// Cold-launch fast path: re-adopt a previously-known pump by its persisted CoreBluetooth identifier
+    /// via `retrievePeripherals`, connecting directly instead of running the slow scan (v3 group C — a
+    /// cold launch could otherwise only scan). Falls back to a scan if the id can't be resolved yet
+    /// (`didDiscover` then auto-connects when the target reappears, since `reconnectTargetId` is set); if
+    /// Bluetooth isn't powered on yet, the retrieve is deferred until `centralManagerDidUpdateState`.
+    /// Additive — the existing scan/connect/restore paths are unchanged.
+    public func connectKnownPeripheral(identifier id: UUID) {
+        intentionalDisconnect = false
+        reconnectTargetId = id
+        guard central.state == .poweredOn else { pendingRetrieveId = id; return }
+        resolveOrScan(id)
+    }
+
+    /// Resolve `id` to a live handle and connect; else fall back to a scan. Mirrors the resolve step in
+    /// `reconnectTick`. Precondition: the central is powered on.
+    private func resolveOrScan(_ id: UUID) {
+        let pumpUUID = CBUUID(nsuuid: ServiceUUID.pumpService)
+        if let p = central.retrievePeripherals(withIdentifiers: [id]).first
+            ?? central.retrieveConnectedPeripherals(withServices: [pumpUUID]).first {
+            connect(p)   // reuses connect(_:) → .connecting, sets reconnectTargetId
+        } else {
+            startScan()  // didDiscover auto-connects when the target (reconnectTargetId) reappears
+        }
+    }
+
     /// Set when the user (not a range/BLE drop) asks to disconnect, so we don't auto-reconnect.
     private var intentionalDisconnect = false
     /// Whether we want to be scanning (to resume after Bluetooth toggles back on).
@@ -183,6 +208,9 @@ public final class PumpBLEClient: NSObject {
     private var reconnectAttempts = 0
     /// Identifier of the peripheral we're trying to keep/recover, so we can re-resolve or re-target it.
     private var reconnectTargetId: UUID?
+    /// A cold-launch `connectKnownPeripheral(identifier:)` that arrived before Bluetooth was powered on;
+    /// the retrieve is deferred to `centralManagerDidUpdateState` once the central reports `.poweredOn`.
+    private var pendingRetrieveId: UUID?
     private static let reconnectBackoff: [TimeInterval] = [5, 10, 20, 30]
 
     /// A reconnect delay with additive jitter (up to +50%) applied to a fixed ladder step. Without it,
@@ -370,6 +398,10 @@ extension PumpBLEClient: CBCentralManagerDelegate {
                 if let p = peripheral, p.state != .connected {
                     state = .connecting
                     central.connect(p, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
+                } else if peripheral == nil, let id = pendingRetrieveId {
+                    // A cold-launch connectKnownPeripheral() arrived before BT was on — honor it now.
+                    pendingRetrieveId = nil
+                    resolveOrScan(id)
                 } else if peripheral == nil && wasScanning {
                     startScan()
                 }
