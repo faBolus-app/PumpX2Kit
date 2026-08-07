@@ -37,6 +37,18 @@ struct TraceFrame: Sendable {
     let hex: String
 }
 
+/// One request→response exchange with BOTH transaction ids exposed, for the txId-match probe (B7).
+/// `requestTxId` is the byte the client wrote at `request.frame[1]`; `responseTxId` is the pump's byte at
+/// `response.frame[1]`. txId-match holds iff the pump echoes the request byte in the response byte.
+struct TxExchange: Sendable {
+    let requestTxId: UInt8
+    let responseFrame: [UInt8]
+    /// The pump's echoed txId — `response.frame[1]` (0 if the frame is too short).
+    var responseTxId: UInt8 { responseFrame.count > 1 ? responseFrame[1] : 0 }
+    /// True when the pump echoed this request's txId in the response (necessary for txId correlation).
+    var echoed: Bool { responseTxId == requestTxId }
+}
+
 @MainActor
 final class LiveSession: NSObject, PumpBLEClientDelegate {
     let client = PumpBLEClient()
@@ -188,6 +200,35 @@ final class LiveSession: NSObject, PumpBLEClientDelegate {
             throw HarnessError.unexpectedResponse("expected \(R.self), got opcode \(parsed.opCode) on \(ch.name)")
         }
         return typed
+    }
+
+    /// Send `message` and await its reply, exposing BOTH transaction ids for the txId-match probe (B7).
+    /// READ-ONLY ONLY: throws if the message would modify pump state — the probe must never issue a
+    /// delivery/mutating command (and never pipeline two of them). Drives the transaction coordinator
+    /// directly (public API) so the client-assigned request txId is captured from the `write` thunk; the
+    /// response frame's `[1]` byte is the pump's echoed txId. The write policy stays `.readOnly` throughout.
+    func exchangeCapturingTxId(_ message: Message, deadline: TimeInterval = 15) async throws -> TxExchange {
+        guard message.operationRisk == .read else {
+            throw HarnessError.unexpectedResponse("txId probe is READ-ONLY; refusing \(type(of: message)) (risk \(message.operationRisk))")
+        }
+        guard let responseOpCode = message.props.responseOpCode else {
+            throw HarnessError.unexpectedResponse("no responseOpCode for \(type(of: message))")
+        }
+        var requestTxId: UInt8 = 0
+        let frame = try await client.withWritePolicy(.readOnly) {
+            try await self.client.transactions.perform(
+                expectedResponseOn: message.characteristic, opCode: responseOpCode,
+                deadline: deadline, serialized: false
+            ) {
+                let txId = try self.client.send(message)   // unsigned read; returns the wire txId
+                requestTxId = txId
+                let hex = (try? Packetize.packetize(message, txId: txId).map { Hex.encode($0.build()) }.joined()) ?? ""
+                self.trace.append(TraceFrame(direction: .outbound, characteristic: message.characteristic, hex: hex))
+                return txId
+            }
+        }
+        trace.append(TraceFrame(direction: .inbound, characteristic: message.characteristic, hex: Hex.encode(frame)))
+        return TxExchange(requestTxId: requestTxId, responseFrame: frame)
     }
 
     /// The minimum `WritePolicy` that authorizes a message of the given risk. Never grants more than the
