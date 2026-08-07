@@ -57,12 +57,38 @@ let package = Package(
         // Oracle/test CLI: connect → status → bolus → cancel.
         .executableTarget(
             name: "PumpX2BenchHarness",
-            dependencies: ["PumpX2Messages", "PumpX2Auth", "PumpX2BLE"]
+            dependencies: ["PumpX2Messages", "PumpX2Auth", "PumpX2BLE"],
+            // Not a SwiftPM resource — it's embedded into the binary via the linker flag below.
+            exclude: ["Info.plist"],
+            // Embed an Info.plist carrying NSBluetoothAlwaysUsageDescription into the executable's
+            // __TEXT,__info_plist section. macOS ABORTS a process that touches CoreBluetooth without
+            // this key (TCC privacy violation), so the harness must carry it to scan/connect. The
+            // `swift test` suite can NOT carry this (its host process is Apple's swiftpm-testing-helper),
+            // which is why hardware validation runs through THIS executable, not the test target.
+            linkerSettings: [
+                .unsafeFlags([
+                    "-Xlinker", "-sectcreate",
+                    "-Xlinker", "__TEXT",
+                    "-Xlinker", "__info_plist",
+                    "-Xlinker", "Sources/PumpX2BenchHarness/Info.plist",
+                ])
+            ]
         ),
 
         // Tests. The oracle (cliparser) tests live in PumpX2MessagesTests.
         .testTarget(name: "PumpX2MessagesTests", dependencies: ["PumpX2Messages"]),
         .testTarget(name: "PumpX2AuthTests", dependencies: ["PumpX2Auth"]),
         .testTarget(name: "PumpX2BLETests", dependencies: ["PumpX2BLE"]),
+
+        // Tier-1 hardware bench harness (LOCAL / manual-only, never in public CI). The whole
+        // suite is GATED on a real pump + env being present (`HardwareGate.connected`), mirroring
+        // the oracle gate `@Suite(.enabled(if: OracleRunner.isAvailable))` — with no pump it SKIPS
+        // (stays green), it never fails. Drives the real `PumpBLEClient` behind the two delivery
+        // walls (WritePolicy default `.readOnly`; Packetize `actionsAffectingInsulinDeliveryEnabled`).
+        // Run: `swift test --filter PumpX2HardwareTests`.
+        .testTarget(
+            name: "PumpX2HardwareTests",
+            dependencies: ["PumpX2Messages", "PumpX2Auth", "PumpX2BLE"]
+        ),
     ]
 )
