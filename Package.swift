@@ -64,5 +64,16 @@ let package = Package(
         .testTarget(name: "PumpX2MessagesTests", dependencies: ["PumpX2Messages"]),
         .testTarget(name: "PumpX2AuthTests", dependencies: ["PumpX2Auth"]),
         .testTarget(name: "PumpX2BLETests", dependencies: ["PumpX2BLE"]),
+
+        // Tier-1 hardware bench harness (LOCAL / manual-only, never in public CI). The whole
+        // suite is GATED on a real pump + env being present (`HardwareGate.connected`), mirroring
+        // the oracle gate `@Suite(.enabled(if: OracleRunner.isAvailable))` — with no pump it SKIPS
+        // (stays green), it never fails. Drives the real `PumpBLEClient` behind the two delivery
+        // walls (WritePolicy default `.readOnly`; Packetize `actionsAffectingInsulinDeliveryEnabled`).
+        // Run: `swift test --filter PumpX2HardwareTests`.
+        .testTarget(
+            name: "PumpX2HardwareTests",
+            dependencies: ["PumpX2Messages", "PumpX2Auth", "PumpX2BLE"]
+        ),
     ]
 )
