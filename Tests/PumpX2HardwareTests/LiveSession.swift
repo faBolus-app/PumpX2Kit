@@ -37,6 +37,32 @@ struct TraceFrame: Sendable {
     let hex: String
 }
 
+/// The pump's firmware/version identity, captured post-pairing so every hardware result can be
+/// TAGGED by pump version + auth scheme. A behavior that holds on one firmware may not hold on
+/// another — a legacy V1 (pre-v7.7, 16-char pairing) pump vs a modern JPAKE (v7.7+, 6-digit) pump
+/// can differ on capability bitmasks, "Mobi-only" writes, time-set, and txId behavior — so a bench
+/// finding is only valid for the version it was observed on. API version is jwoglom's firmware-FAMILY
+/// discriminator (t:slim X2 = 2.x–3.4, Mobi = 3.5+); `pumpSoftwareVersion`/`modelNumber` come from
+/// PumpVersionResponse when the pump answers it (older firmware may not).
+struct PumpFirmwareProfile: Sendable, CustomStringConvertible {
+    let apiMajor: Int
+    let apiMinor: Int
+    let isMobi: Bool
+    let pairingScheme: PairingCodeType
+    let pumpSoftwareVersion: String     // PumpVersionResponse.pumpRev; "" if unread
+    let armSoftwareVersion: UInt32      // PumpVersionResponse.armSwVer; 0 if unread
+    let modelNumber: UInt32             // PumpVersionResponse.modelNum; 0 if unread
+
+    var apiVersionString: String { "\(apiMajor).\(apiMinor)" }
+    var description: String {
+        var s = "API \(apiVersionString)\(isMobi ? " (Mobi)" : " (t:slim X2 family)") · pairing=\(pairingScheme.rawValue)"
+        if !pumpSoftwareVersion.isEmpty { s += " · pumpSW=\(pumpSoftwareVersion)" }
+        if armSoftwareVersion != 0 { s += " · armSW=\(armSoftwareVersion)" }
+        if modelNumber != 0 { s += " · model=\(modelNumber)" }
+        return s
+    }
+}
+
 /// One request→response exchange with BOTH transaction ids exposed, for the txId-match probe (B7).
 /// `requestTxId` is the byte the client wrote at `request.frame[1]`; `responseTxId` is the pump's byte at
 /// `response.frame[1]`. txId-match holds iff the pump echoes the request byte in the response byte.
@@ -58,13 +84,19 @@ final class LiveSession: NSObject, PumpBLEClientDelegate {
     private(set) var isPaired = false
     private(set) var trace: [TraceFrame] = []
 
+    /// The pairing scheme in use, decided from the operator's code at pair time: JPAKE (6-digit,
+    /// v7.7+) vs legacy V1 (16-char, pre-v7.7). Cases branch on this where the schemes differ.
+    private(set) var pairingScheme: PairingCodeType = .short6Char
+    /// The pump's firmware/version identity for result tagging — populated by `readFirmwareProfile()`.
+    private(set) var firmwareProfile: PumpFirmwareProfile?
+
     /// CGM readings recovered from the most recent history stream (populated by the delegate).
     private(set) var historyCgmReadings: [CgmHistoryReading] = []
 
     private var pairingCode = ""
     private var wantConnect = false
     private var derivedSecret: [UInt8] = []
-    private var coordinator: PairingCoordinator?
+    private var coordinator: (any PairingCoordinating)?
     private var pairedContinuation: CheckedContinuation<Void, Error>?
 
     // History streaming: stream frames (opcode 129) arrive unsolicited on `.historyLog` and are routed
@@ -99,13 +131,26 @@ final class LiveSession: NSObject, PumpBLEClientDelegate {
         }
     }
 
-    /// Drive JPAKE: full pair on first ready, quick-pair RESUME on every reconnect. Pairing messages are
-    /// on AUTHORIZATION (risk `.read`), so they pass the `.readOnly` interlock — same as the bench monitor.
+    /// Drive pairing, choosing the scheme from the operator's code (single decision point,
+    /// `PairingAuth.detectType`). Pairing messages are on AUTHORIZATION (risk `.read`), so they pass
+    /// the `.readOnly` interlock — same as the bench monitor. Both schemes are wired uniformly through
+    /// `PairingCoordinating`; they differ only in RESUME:
+    ///   • JPAKE (6-digit, v7.7+): full pair on first ready, quick-pair RESUME on every reconnect.
+    ///   • Legacy V1 (16-char, pre-v7.7): full CentralChallenge→PumpChallenge; NO resume — a reconnect
+    ///     re-runs the full challenge SILENTLY (the app already holds the code).
     private func beginPairing() {
         do {
-            let coord: PairingCoordinator = derivedSecret.isEmpty
-                ? try PairingCoordinator(pairingCode: pairingCode)          // full 6-digit pair
-                : PairingCoordinator(resumeDerivedSecret: derivedSecret)    // quick-pair resume
+            let scheme = PairingAuth.detectType(pairingCode)
+            pairingScheme = scheme
+            let coord: any PairingCoordinating
+            switch scheme {
+            case .short6Char:
+                coord = derivedSecret.isEmpty
+                    ? try PairingCoordinator(pairingCode: pairingCode)          // full 6-digit pair
+                    : PairingCoordinator(resumeDerivedSecret: derivedSecret)    // quick-pair resume
+            case .long16Char:
+                coord = try LegacyPairingCoordinator(pairingCode: pairingCode)  // full re-challenge, no resume
+            }
             coord.onSendRequest = { [weak self] msg in
                 guard let self else { return }
                 self.recordOutgoing(msg, key: [], ts: 0, deliver: false)
@@ -115,7 +160,8 @@ final class LiveSession: NSObject, PumpBLEClientDelegate {
             coord.onPaired = { [weak self] key, _ in
                 guard let self else { return }
                 self.authKey = key
-                self.derivedSecret = coord.derivedSecret
+                // Only JPAKE carries a resume secret; V1 re-runs the full challenge on reconnect.
+                if let jpake = coord as? PairingCoordinator { self.derivedSecret = jpake.derivedSecret }
                 self.isPaired = true
                 self.finishPairing(.success(()))
             }
@@ -156,6 +202,22 @@ final class LiveSession: NSObject, PumpBLEClientDelegate {
     /// `signingTimestamp` is `currentTime`, the gotcha that makes signed writes work).
     func refreshSigningTime() async throws {
         signingTimestamp = try await request(TimeSinceResetRequest(), expect: TimeSinceResetResponse.self).currentTime
+    }
+
+    /// Read + cache the pump's firmware/version identity so results can be tagged by pump version +
+    /// auth scheme (see `PumpFirmwareProfile`). ApiVersion is required; PumpVersion is best-effort
+    /// (a legacy/older pump may not answer it — tolerated, never a false failure).
+    @discardableResult
+    func readFirmwareProfile() async throws -> PumpFirmwareProfile {
+        if let firmwareProfile { return firmwareProfile }
+        let api = try await request(ApiVersionRequest(), expect: ApiVersionResponse.self)
+        let ver = try? await request(PumpVersionRequest(), expect: PumpVersionResponse.self)
+        let profile = PumpFirmwareProfile(
+            apiMajor: api.majorVersion, apiMinor: api.minorVersion, isMobi: api.isMobi,
+            pairingScheme: pairingScheme, pumpSoftwareVersion: ver?.pumpRev ?? "",
+            armSoftwareVersion: ver?.armSwVer ?? 0, modelNumber: ver?.modelNum ?? 0)
+        firmwareProfile = profile
+        return profile
     }
 
     /// Send `message` (optionally signed, optionally awaiting the correlated reply) and record the frame.

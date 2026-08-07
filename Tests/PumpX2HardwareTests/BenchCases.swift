@@ -114,10 +114,17 @@ enum BenchCases {
 
     // ─────────────────────────────────────────────────────────────────────────────────────────
     // CASE 3 — Pairing + reconnect / state-restoration cycle (§5.2). NO delivery. RUNNABLE NOW.
-    //   EC-JPAKE pair (once, by the shared session) -> a status read -> forced link drop -> reconnect
-    //   -> JPAKE RESUME (quick-pair, no new 6-digit code) -> a status read still parses.
+    //   Pair (once, by the shared session — JPAKE 6-digit OR legacy V1 16-char, per the operator's
+    //   code) -> read + record the firmware/version PROFILE (tags every result by pump version + auth
+    //   scheme; a behavior on one firmware may not hold on another) -> a status read -> forced link
+    //   drop -> reconnect -> RE-AUTH:
+    //       • JPAKE (v7.7+): quick-pair RESUME (no new 6-digit code).
+    //       • legacy V1 (pre-v7.7): a SILENT full CentralChallenge→PumpChallenge re-challenge (the app
+    //         already holds the code — no on-screen confirm on reconnect).
+    //   -> a status read still parses.
     //   Self-verifies: signing key still derived, reconnect completes in budget, reads parse before/after,
-    //   and the write policy stayed `.readOnly` (fail-closed held).
+    //   and the write policy stayed `.readOnly` (fail-closed held). Scheme-agnostic assertions — both
+    //   re-auth paths must leave a usable signing key with the policy still read-only.
     // ─────────────────────────────────────────────────────────────────────────────────────────
     static let pairingReconnectCycle = HardwareCase(
         name: "pairing-reconnect-state-restoration",
@@ -125,16 +132,18 @@ enum BenchCases {
         requiresCGM: false,
         preconditions: [],
         command: { s in
+            let profile = try await s.readFirmwareProfile()   // tags results by pump version + auth scheme
+            print("ℹ️ [hardware] pump firmware profile — \(profile)")
             _ = try await s.request(InsulinStatusRequest(), expect: InsulinStatusResponse.self)   // baseline read parses
             let t0 = Date()
             s.simulateLinkDrop()
-            try await s.waitUntilReady(timeout: 45)   // rediscover → reconnect → JPAKE resume
+            try await s.waitUntilReady(timeout: 45)   // rediscover → reconnect → JPAKE resume / V1 re-challenge
             let elapsed = Date().timeIntervalSince(t0)
-            #expect(elapsed <= 45, "reconnect + resume exceeded the budget (\(elapsed)s)")
+            #expect(elapsed <= 45, "reconnect + re-auth exceeded the budget (\(elapsed)s)")
             return Int(elapsed)
         },
         verify: { s, _, _ in
-            #expect(!s.authKey.isEmpty, "signing key not derived after JPAKE resume")
+            #expect(!s.authKey.isEmpty, "signing key not derived after re-auth (scheme=\(s.pairingScheme.rawValue))")
             #expect(s.client.writePolicy == .readOnly, "policy must stay read-only for a monitor cycle")
             _ = try await s.request(InsulinStatusRequest(), expect: InsulinStatusResponse.self)   // parses post-reconnect
         })
@@ -152,12 +161,20 @@ enum BenchCases {
         preconditions: [],
         command: { _ in 0 },
         verify: { s, _, _ in
-            _ = try await s.request(ApiVersionRequest(), expect: ApiVersionResponse.self)
+            let api = try await s.request(ApiVersionRequest(), expect: ApiVersionResponse.self)
             let time = try await s.request(TimeSinceResetRequest(), expect: TimeSinceResetResponse.self)
             #expect(time.signingTimestamp == time.currentTime, "signingTimestamp must equal currentTime (offset 0)")
-            let features = try await s.request(PumpFeaturesV1Request(), expect: PumpFeaturesV1Response.self)
-            #expect(features.controlIQSupported == ((features.featureBitmask & 1024) != 0),
-                    "derived controlIQSupported must match the feature bitmask bit")
+            // Capability-bitmask dump — tolerant of an OLDER pump. PumpFeaturesV1 (op 78/79) may be
+            // unsupported on a legacy (V1-paired, pre-v7.7) pump, which defaults to API_V2_1. Assert the
+            // derived-bit invariant when the pump answers; a nil answer is acceptable ONLY on a legacy
+            // (V1) pump — a missing bitmask on a modern pump is itself a finding, not a pass.
+            if let features = try? await s.request(PumpFeaturesV1Request(), expect: PumpFeaturesV1Response.self) {
+                #expect(features.controlIQSupported == ((features.featureBitmask & 1024) != 0),
+                        "derived controlIQSupported must match the feature bitmask bit")
+            } else {
+                #expect(s.pairingScheme == .long16Char,
+                        "PumpFeaturesV1 unsupported on a non-legacy pump (API \(api.majorVersion).\(api.minorVersion)) — investigate")
+            }
             _ = try await s.request(GlobalMaxBolusSettingsRequest(), expect: GlobalMaxBolusSettingsResponse.self)
             _ = try await s.request(BasalLimitSettingsRequest(), expect: BasalLimitSettingsResponse.self)
             _ = try await s.request(ProfileStatusRequest(), expect: ProfileStatusResponse.self)
