@@ -390,6 +390,11 @@ final class LiveSession: NSObject, PumpBLEClientDelegate {
         trace.append(TraceFrame(direction: .inbound, characteristic: characteristic, hex: Hex.encode(frame)))
         switch characteristic {
         case .authorization:
+            // Validate the frame CRC-16 before the coordinator parses it inline (it bypasses
+            // ResponseParser's CRC check) — a corrupted pairing reply must not advance the handshake.
+            guard frame.count >= 5,
+                  Bytes.calculateCRC16(Array(frame[0..<(frame.count - 2)])) == Array(frame[(frame.count - 2)...])
+            else { return }
             coordinator?.handle(frame: frame)
         case .historyLog:
             guard collectingHistory,
