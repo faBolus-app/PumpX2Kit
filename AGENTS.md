@@ -42,3 +42,24 @@ oracle-parity test.** Doing otherwise can silently misdose.
 ## Consumed by
 `../faBolus` (the app, via SwiftPM). App-level safety layering + UI live there; the wire format lives
 here. Keep them in step.
+
+## Governance & versioning (§1.3/§1.4)
+Branch policy is **canonical in faBolus, not here.** The three-branch model
+(`deprecated`/`main`/`experimental`), the §1.2 experimental gate, and the §1.4 promotion criteria are
+defined once in [`../faBolus/BRANCHES.md`](../faBolus/BRANCHES.md) and govern all three code repos in
+lockstep (§1.3). See the local [`BRANCHES.md`](BRANCHES.md) stub and [`CHANGELOG.md`](CHANGELOG.md). Do
+not restate or fork those rules.
+
+**Version-pinning contract (§1.3).** The intended shape is an annotated `vX.Y.Z` tag consumed by
+`url:` + version, with a committed `Package.resolved` and a documented local-path override for dev.
+
+**Status: version-pinning is DECLARED UNMET (owner decision, 2026-08-07).** faBolus consumes this
+package by local path (`faBolus/project.yml` `path: ../PumpX2Kit`), not a URL+version pin, and that
+stays. SwiftPM refuses a URL+version dependency on a package with `.unsafeFlags`, and there are **two**
+sites: `Package.swift:37` (the `-DMBEDTLS_CONFIG_FILE` flag on `CMbedTLSJPAKE` — the real blocker,
+because it is in the closure of the `PumpX2Auth`/`PumpX2BLE` products faBolus consumes) and
+`Package.swift:69` (a harness linker flag on the `PumpX2BenchHarness` executable, which faBolus does
+not consume). Removing them requires vendoring the Mbed TLS config/headers in-tree and rehoming the 13
+committed `CMbedTLSJPAKE/mbedtls_lib/*.c` symlinks — a build-graph/vendoring refactor gated only by the
+oracle byte-parity + hardware-pairing tests. **That refactor is deferred and is NOT attempted here.**
+Do not fake-satisfy §1.3 with the local path; it is declared unmet on purpose. Tracked as WIP item 8.

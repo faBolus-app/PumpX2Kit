@@ -35,3 +35,15 @@ jobs:
           # OracleRunner finds the JAR at the default vendor path; point it at CI's JDK.
           PUMPX2_JAVA: ${{ env.JAVA_HOME }}/bin/java
         run: swift test
+
+  # SBOM / license-provenance check (P16 §3.1). Independent of the oracle job so it can NEVER affect
+  # the build. Non-blocking-if-risky: continue-on-error keeps a heuristic provenance false-positive
+  # from turning CI red, but the check is expected to stay green.
+  sbom-provenance:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        # No submodules: the check scans the committed source tree (Sources/) + docs/SBOM.md only.
+      - name: SBOM / provenance check
+        run: ./scripts/check-sbom.sh

@@ -21,8 +21,13 @@ public protocol PumpBLEClientDelegate: AnyObject {
 /// scan for the pump service → connect → discover characteristics → request MTU → enable
 /// notifications → write packetized requests / reassemble notified responses.
 ///
-/// NOT yet hardware-tested — no pump/phone hardware available. Structure follows the
-/// reference; behavior must be validated on hardware before it drives a pump.
+/// Hardware-validated on real pumps (see `PINNED.md` for the log): 6-digit EC-JPAKE pairing +
+/// read-only monitor + a signed 0.10 u bolus (t:slim X2, Control-IQ+ 7.10.2, 2026-07-18), and legacy
+/// V1 (16-char) pairing + read sweep + signed `BolusPermission` acceptance (spare t:slim X2, API 2.5,
+/// 2026-08-07). This BLE path can only be exercised on hardware through the `PumpX2BenchHarness`
+/// executable, not `swift test` — a macOS test host lacks `NSBluetoothAlwaysUsageDescription` and is
+/// TCC-aborted at scan. Cartridge-dependent items (saline delivery on the legacy pump, mid-delivery
+/// cancel) remain bench-gated (see `docs/BENCH-SESSION-PLAN.md`).
 @MainActor
 public final class PumpBLEClient: NSObject {
     public enum State: Equatable, Sendable {

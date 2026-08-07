@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Run the PumpX2Kit test suite.
+# Run the PumpX2Kit test suite from the Command Line Tools (CLT), without full Xcode.
 #
-# Full Xcode is NOT installed in this environment — only the Command Line Tools. The
-# swift-testing framework ships with the CLT but isn't on SwiftPM's default search/rpath,
-# and the SIP-protected swiftpm-testing-helper strips DYLD_* env vars. So we point the
-# compiler/linker at the CLT-bundled Testing.framework and bake in the rpaths it needs at
-# load time (the framework itself + lib_TestingInterop.dylib, which live in different dirs).
-#
-# Once full Xcode is installed, plain `swift test` works and this wrapper is unnecessary.
+# CONVENIENCE, NOT A NECESSITY. Full Xcode IS installed on the dev machine and in CI
+# (`.github/workflows/ci.yml` runs plain `swift test`), so this wrapper is not required — it is the
+# CLT-only test path, kept for machines that have only the Command Line Tools. When only the CLT is
+# present, plain `swift test` fails: the swift-testing framework ships with the CLT but isn't on
+# SwiftPM's default search/rpath, and the SIP-protected swiftpm-testing-helper strips DYLD_* env
+# vars. So we point the compiler/linker at the CLT-bundled Testing.framework and bake in the rpaths
+# it needs at load time (the framework itself + lib_TestingInterop.dylib, which live in different
+# dirs). With full Xcode selected via `xcode-select`, run plain `swift test` and skip this wrapper.
 set -euo pipefail
 
 FW="/Library/Developer/CommandLineTools/Library/Developer/Frameworks"

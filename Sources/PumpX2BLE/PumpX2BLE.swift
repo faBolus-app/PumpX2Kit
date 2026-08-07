@@ -4,7 +4,8 @@ import Foundation
 ///
 /// Platform-agnostic: imports CoreBluetooth only, never UIKit, so the same code runs on iOS
 /// and watchOS. Entry point is `PumpBLEClient`; `PacketReassembler` handles inbound
-/// multi-packet reassembly. NOT yet hardware-tested (no pump/phone available) — the
-/// connection flow follows upstream `TandemBluetoothHandler` and must be validated on hardware
-/// before driving a pump.
+/// multi-packet reassembly. Hardware-validated on real pumps — 6-digit JPAKE and legacy 16-char V1
+/// pairing, read sweeps, and a signed bolus (see `PINNED.md` for the log). The connection flow
+/// follows upstream `TandemBluetoothHandler`; the BLE path is exercised on hardware via the
+/// `PumpX2BenchHarness` executable, not `swift test`.
 public enum PumpX2BLE {}
