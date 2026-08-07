@@ -46,12 +46,34 @@ public enum PairingAuth {
         }
     }
 
-    /// Auto-detects the type (6-digit → SHORT, else LONG) and normalizes.
+    /// Auto-detects the type (6-digit → SHORT, else LONG) and normalizes. Mirrors the upstream
+    /// `PumpChallengeRequestBuilder.processPairingCode(_:)` heuristic exactly (kept for parity).
     public static func processPairingCode(_ pairingCode: String) throws -> String {
         if pairingCode.count == 6 || PairingCodeType.short6Char.filterCharacters(pairingCode).count == 6 {
             return try processPairingCode(pairingCode, type: .short6Char)
         }
         return try processPairingCode(pairingCode, type: .long16Char)
+    }
+
+    /// Selects the pairing SCHEME for a code without validating it — used to pick the right pairing
+    /// coordinator (JPAKE for `.short6Char`, legacy V1 for `.long16Char`).
+    ///
+    /// This is a safety-hardened variant of the upstream auto-detect above: a 16-char alphanumeric
+    /// code that happens to contain exactly 6 digits would be MISCLASSIFIED as `.short6Char` by the
+    /// upstream heuristic (which keys on "6 digits present"), selecting the wrong (JPAKE) handshake
+    /// and causing a confusing pairing failure. Here, a code whose alphanumeric length is 16 is
+    /// always `.long16Char`; only a purely-numeric 6-digit code is `.short6Char`. On every input the
+    /// upstream heuristic classifies unambiguously (including all of its own test vectors) this
+    /// returns the same answer. The chosen coordinator's `init` still validates the exact format and
+    /// throws on a malformed code, so detection is only a routing hint, never a correctness gate.
+    public static func detectType(_ pairingCode: String) -> PairingCodeType {
+        let alnum = PairingCodeType.long16Char.filterCharacters(pairingCode)
+        let digits = PairingCodeType.short6Char.filterCharacters(pairingCode)
+        if alnum.count == 16 { return .long16Char }                    // unambiguous: 16 alphanumeric
+        if digits.count == 6 && alnum.count == 6 { return .short6Char } // purely-numeric 6-digit
+        // Fall back to the upstream heuristic for anything else.
+        if pairingCode.count == 6 || digits.count == 6 { return .short6Char }
+        return .long16Char
     }
 
     /// V1 pairing: given the pump's `hmacKey` (from CentralChallengeResponse), the

@@ -117,6 +117,11 @@ public enum ResponseParser {
         add(UnknownMobiOpcode110Response.self)
         add(TempRateResponse.self)
         add(ErrorResponse.self)
+        // AUTHORIZATION — legacy (V1 / 16-char) pairing replies. The modern JPAKE pairing replies
+        // (op 33/35/37/39/41) are parsed inline by PairingCoordinator and are intentionally NOT
+        // registered here; these two are registered for oracle parity + reuse.
+        add(CentralChallengeResponse.self)
+        add(PumpChallengeResponse.self)
         // HISTORY_LOG (variable-size stream)
         add(HistoryLogStreamResponse.self)
         // CONTROL_STREAM state responses (A3) — one representative per opcode (upstream mirrors this)

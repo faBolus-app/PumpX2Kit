@@ -72,4 +72,19 @@ import PumpX2Messages
         #expect(req.pumpChallengeHash.count == 20)
         #expect(req.cargo.count == 22)
     }
+
+    /// Independent golden vector for `createV1` — the expected digest was computed OUTSIDE Swift
+    /// (Python `hmac`/`hashlib`), so it pins the FULL path (pairing-code processing → HMAC argument
+    /// order → digest) against a reference the app's own `Crypto.hmacSha1` cannot circularly satisfy.
+    /// The self-check above compares two Swift computations, so a regression in `hmacSha1` (or the
+    /// arg order flipping) would pass it; this vector would fail. Inputs: the upstream 16-char example
+    /// code + the real pump `hmacKey` from jwoglom `CentralChallengeResponseTest` (840c4e16873046bc);
+    /// `pumpChallengeHash = HMAC-SHA1(key = pairingCode UTF-8, data = hmacKey)`.
+    @Test func createV1MatchesIndependentGolden() throws {
+        let hmacKey = try Hex.decode("840c4e16873046bc")
+        let req = try PairingAuth.createV1(appInstanceId: 1, hmacKey: hmacKey, pairingCode: "6VeDeRAL5DCigGw2")
+        #expect(Hex.encode(req.pumpChallengeHash) == "e39aea1f3d120be8206d4bb728b54fd94ad02e54")
+        #expect(req.appInstanceId == 1)
+        #expect(req.pumpChallengeHash.count == 20)
+    }
 }
