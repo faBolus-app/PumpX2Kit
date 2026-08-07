@@ -24,12 +24,33 @@ vendor changes.
 | ARM S/W Version | `da8923cc9d010d07` |
 | MSP S/W Version | `da8923cc9d010d07` |
 | S/W Part Number | `1017490 000` |
-| Pairing type | **6-digit JPAKE** (firmware ≫ v7.7, so legacy 16-char does not apply) |
+| Pairing type | **6-digit JPAKE** (firmware ≫ v7.7) |
 
 **Implication:** pairing uses the modern EC-JPAKE handshake (`PumpX2Auth.JpakeAuth`, mbedTLS
-secp256r1/SHA-256). The legacy 16-char path is retained only for older pumps.
+secp256r1/SHA-256).
+
+## Spare bench pump — legacy V1 (pre-v7.7), 16-char pairing (added 2026-08-07)
+
+There is now a **SECOND, distinct** pump on the bench: a spare **t:slim X2** running **older
+firmware (< v7.7)** that pairs with a **16-character alphanumeric pairing code** via the **legacy V1
+CentralChallenge → PumpChallenge** handshake — NOT the 6-digit EC-JPAKE scheme the primary pump
+above uses. Discovered while bringing the spare up on the hardware harness; the V1 library support
+this needed now exists (`PairingAuth.createV1`, `LegacyPairingCoordinator`, op-17/19 parsers,
+`PairingAuth.detectType`), and `LiveSession.beginPairing()` auto-selects V1 vs JPAKE from the code.
+
+> **The two pumps are DIFFERENT FIRMWARE FAMILIES and must be validated separately.** A behavior
+> observed on one (capability bitmask contents, "Mobi-only" write acceptance, remote time-set,
+> txId-match, API-version-gated message variants) does **not** transfer to the other. The harness
+> captures a `PumpFirmwareProfile` (API version + pump SW version + auth scheme) and prints it at the
+> top of each run — **every validation-log entry below must record which pump/firmware it was
+> observed on** (see the log's tagging rule).
 
 ## Validation log
+
+> **Tagging rule (required):** every entry must state the **pump + firmware + pairing scheme** it was
+> observed on — e.g. `[t:slim X2 · CIQ+ 7.10.2 · JPAKE]` or `[t:slim X2 · <fw> · V1/16-char]`. Results
+> are firmware-scoped; an untagged entry is ambiguous now that two firmware families are on the bench.
+> The 2026-07-18 entries below all refer to the **primary** pump `[t:slim X2 · CIQ+ 7.10.2 · JPAKE]`.
 
 - **2026-07-18 — read-only monitor PASSED on hardware.** `swift run PumpX2BenchHarness monitor`
   against this pump: BLE scan → connect → discover, **6-digit JPAKE pairing succeeded**
