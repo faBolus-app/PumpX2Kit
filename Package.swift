@@ -57,7 +57,22 @@ let package = Package(
         // Oracle/test CLI: connect → status → bolus → cancel.
         .executableTarget(
             name: "PumpX2BenchHarness",
-            dependencies: ["PumpX2Messages", "PumpX2Auth", "PumpX2BLE"]
+            dependencies: ["PumpX2Messages", "PumpX2Auth", "PumpX2BLE"],
+            // Not a SwiftPM resource — it's embedded into the binary via the linker flag below.
+            exclude: ["Info.plist"],
+            // Embed an Info.plist carrying NSBluetoothAlwaysUsageDescription into the executable's
+            // __TEXT,__info_plist section. macOS ABORTS a process that touches CoreBluetooth without
+            // this key (TCC privacy violation), so the harness must carry it to scan/connect. The
+            // `swift test` suite can NOT carry this (its host process is Apple's swiftpm-testing-helper),
+            // which is why hardware validation runs through THIS executable, not the test target.
+            linkerSettings: [
+                .unsafeFlags([
+                    "-Xlinker", "-sectcreate",
+                    "-Xlinker", "__TEXT",
+                    "-Xlinker", "__info_plist",
+                    "-Xlinker", "Sources/PumpX2BenchHarness/Info.plist",
+                ])
+            ]
         ),
 
         // Tests. The oracle (cliparser) tests live in PumpX2MessagesTests.

@@ -19,6 +19,10 @@ import PumpX2BLE
 // A bolus/delivery mode is intentionally NOT provided here yet — deliver via the app once the
 // read-only monitor is validated on hardware.
 
+// Unbuffered stdout so progress prints appear LIVE even when piped (e.g. `… | tee run.log`).
+// Swift block-buffers stdout to a pipe, which makes a stable (low-output) run look "stuck".
+setbuf(stdout, nil)
+
 let args = Array(CommandLine.arguments.dropFirst())
 
 func serializationSelfCheck() {
@@ -37,16 +41,31 @@ func serializationSelfCheck() {
 final class Monitor: NSObject, PumpBLEClientDelegate {
     let client = PumpBLEClient()
     let pairingCode = ProcessInfo.processInfo.environment["PUMP_PAIRING_CODE"] ?? ""
-    var coordinator: PairingCoordinator?
+    var coordinator: (any PairingCoordinating)?
+    /// The pairing scheme chosen from the operator's code: JPAKE (6-digit, v7.7+) vs legacy V1
+    /// (16-char, pre-v7.7). Used to tag results by auth scheme.
+    var pairingScheme: PairingCodeType = .short6Char
     enum Mode: Equatable {
-        case scan, monitor, permissionTest
+        case scan, monitor, permissionTest, probe
         case deliverBolus(milliunits: UInt32)
         case carbBolus(carbs: Double, bg: Int?)
     }
     let mode: Mode
     var pollTimer: Timer?
+    /// Maps each poll read's txId → its name for the current cycle, so an op-77 ErrorResponse (which
+    /// this legacy pump returns with a ZEROED requestCodeId) can be attributed to the exact read that
+    /// triggered it via the echoed txId. Cleared at the start of each `poll()`.
+    var pollTxMap: [UInt8: String] = [:]
     var authKey: [UInt8] = []
     var signingTimestamp: UInt32 = 0
+    /// True while connected AND paired (reset on any non-`.ready` state). The probe sequence waits on
+    /// this so each step runs only against a live, re-paired link.
+    var isPaired = false
+    /// The comprehensive `probe` sequence is launched once (on first pair) and survives reconnects.
+    var probeStarted = false
+    /// Control-IQ closed-loop state (from ControlIQInfoV1) — decides the temp-basal (needs OFF) vs
+    /// SetModes (needs ON) preconditions when interpreting the Mobi-only write probes.
+    var ciqClosedLoopEnabled: Bool?
     var permissionSent = false
     var currentBolusId: Int = 0
     // Bolus type bits are derived by the shared library helper `InitiateBolusRequest.typeBitmask`
@@ -80,6 +99,7 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
 
     func pumpClient(_ c: PumpBLEClient, didChange state: PumpBLEClient.State) {
         print("[state] \(state)")
+        if state != .ready { isPaired = false }   // a drop clears paired; the probe waits for re-pair
         if state == .idle { c.startScan() }
     }
 
@@ -95,15 +115,31 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
             return
         }
         do {
-            let coord = try PairingCoordinator(pairingCode: pairingCode)
+            // Route by the operator's code (single decision point). A 16-char code selects the legacy
+            // V1 CentralChallenge→PumpChallenge handshake; a 6-digit code selects JPAKE. Both drive
+            // through the shared `PairingCoordinating` surface; AUTHORIZATION msgs are risk `.read`.
+            let scheme = PairingAuth.detectType(pairingCode)
+            pairingScheme = scheme
+            let coord: any PairingCoordinating
+            switch scheme {
+            case .short6Char: coord = try PairingCoordinator(pairingCode: pairingCode)       // JPAKE 6-digit
+            case .long16Char: coord = try LegacyPairingCoordinator(pairingCode: pairingCode) // legacy V1 16-char
+            }
             coord.onSendRequest = { msg in try? c.send(msg) }   // AUTHORIZATION msgs pass the interlock
             coord.onError = { print("[pairing] error: \($0)") }
             coord.onPaired = { [weak self] authKey, _ in
                 guard let self else { return }
                 self.authKey = authKey
-                print("[paired] JPAKE complete; signing key derived (\(authKey.count) bytes).")
+                self.isPaired = true
+                print("[paired] \(scheme == .long16Char ? "legacy V1 (16-char)" : "JPAKE (6-digit)") complete; signing key derived (\(authKey.count) bytes).")
                 switch self.mode {
-                case .monitor: self.startPolling()
+                case .monitor:
+                    self.readFirmwareProfile()   // print API/version/capability profile, then poll status
+                    self.startPolling()
+                case .probe:
+                    self.readFirmwareProfile()
+                    // Launch the sequence once; it internally awaits re-pairs across the pump's drops.
+                    if !self.probeStarted { self.probeStarted = true; Task { await self.runProbeSequence() } }
                 case .permissionTest, .deliverBolus:
                     print("[write] reading pump time for signing…")
                     try? c.send(TimeSinceResetRequest())   // read (allowed); triggers the signed flow
@@ -116,7 +152,7 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
                 }
             }
             coordinator = coord
-            print("[pairing] starting JPAKE (6-digit)…")
+            print("[pairing] starting \(scheme == .long16Char ? "legacy V1 (16-char) CentralChallenge→PumpChallenge" : "JPAKE (6-digit)")…")
             coord.start()
         } catch {
             print("[pairing] failed to start: \(error)")
@@ -220,21 +256,219 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
         }
     }
 
+    /// One-shot: read + print the pump's firmware/version profile + capability bitmask so every
+    /// bench result can be TAGGED by pump version + auth scheme (a behavior on one firmware may not
+    /// hold on another). All reads are read-only. PumpVersion / PumpFeaturesV1 may go unanswered on
+    /// an older pump — tolerated (no failure); a missing capability bitmask is itself a finding.
+    func readFirmwareProfile() {
+        try? client.send(ApiVersionRequest())
+        try? client.send(PumpVersionRequest())
+        try? client.send(PumpFeaturesV1Request())   // op-79 capability bitmask (may be unsupported on legacy)
+    }
+
     func poll() {
-        try? client.send(ControlIQIOBRequest())
-        try? client.send(InsulinStatusRequest())
-        try? client.send(CurrentBatteryV2Request())
-        try? client.send(CurrentEgvGuiDataV2Request())
-        try? client.send(CurrentBasalStatusRequest())
-        try? client.send(LastBolusStatusV2Request())
-        try? client.send(BolusCalcDataSnapshotRequest())
+        pollTxMap.removeAll()
+        pollSend(ControlIQIOBRequest(), "ControlIQIOB")
+        pollSend(InsulinStatusRequest(), "InsulinStatus")
+        pollSend(CurrentBatteryV2Request(), "CurrentBatteryV2")
+        // CurrentEgvGuiDataV2 (a Control-IQ-era CGM read) is REJECTED by legacy API-2.5 pumps with a
+        // generic op-77 error, after which the pump DROPS the BLE link (validated on hardware
+        // 2026-08-07). Skip it on a V1-paired pump; it works on modern (JPAKE) pumps, so keep it there.
+        if pairingScheme != .long16Char {
+            pollSend(CurrentEgvGuiDataV2Request(), "CurrentEgvGuiDataV2")
+        }
+        pollSend(CurrentBasalStatusRequest(), "CurrentBasalStatus")
+        pollSend(LastBolusStatusV2Request(), "LastBolusStatusV2")
+        pollSend(BolusCalcDataSnapshotRequest(), "BolusCalcDataSnapshot")
+    }
+
+    /// Send a poll read (read-only) and remember its txId → name for op-77 attribution.
+    private func pollSend(_ req: Message, _ name: String) {
+        if let txId = try? client.send(req) { pollTxMap[txId] = name }
     }
 
     func startPolling() {
+        pollTimer?.invalidate()   // avoid stacking timers when re-paired after a reconnect
         poll()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { _ in
             MainActor.assumeIsolated { self.poll() }
         }
+    }
+
+    // MARK: - Comprehensive probe (no cartridge / no CGM)
+    //
+    // Read-only reads + SIGNED writes that do NOT dispense insulin. The two delivery walls stay armed:
+    // each write elevates the WritePolicy to the MINIMUM its operation-risk needs (scoped, auto-restored),
+    // and `allowInsulinDelivery` is set ONLY for a `modifiesInsulinDelivery` message (temp-basal / modes)
+    // — never a bolus, and PUMPX2_DELIVER_SALINE is never touched. With NO cartridge nothing can be
+    // dispensed regardless; these probes observe the pump's ACCEPT/NACK, not therapy.
+    //
+    // This legacy pump DROPS the BLE link on an unsupported op, so every step is failure-isolated and
+    // waits for the automatic re-pair before the next step.
+
+    static func minimumPolicy(for risk: OperationRisk) -> PumpBLEClient.WritePolicy {
+        switch risk {
+        case .read:        return .readOnly
+        case .benign:      return .allowBenignControl
+        case .settings:    return .allowNonDelivery
+        case .destructive: return .allowDestructive
+        case .delivery:    return .allowDelivery
+        }
+    }
+
+    /// Block until connected AND (re-)paired, or give up after `timeout`.
+    private func awaitPaired(_ timeout: TimeInterval = 45) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !(client.state == .ready && isPaired) {
+            if Date() > deadline { return false }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+        return true
+    }
+
+    /// A read probe: returns the typed response, or nil if the pump rejected it (op-77 → the pump
+    /// drops the link; surfaces here as a timeout, plus a `⚠️ [error-response]` line from the delegate).
+    @discardableResult
+    private func probeRead<R: Message>(_ req: Message, as _: R.Type, _ label: String) async -> R? {
+        guard await awaitPaired() else { print("  ⏭️  \(label): not paired"); return nil }
+        do {
+            let frame = try await client.withWritePolicy(.readOnly) {
+                try await self.client.sendAwaitingResponse(req, deadline: 10)
+            }
+            guard let typed = try ResponseParser.parse(frame: frame, characteristic: req.characteristic).message as? R else {
+                print("  ❓ \(label): unexpected response opcode"); return nil
+            }
+            return typed
+        } catch {
+            print("  ❌ \(label): REJECTED / link dropped"); _ = await awaitPaired(); return nil
+        }
+    }
+
+    /// A signed write probe: returns the success frame if the pump ACCEPTED (replied with the success
+    /// opcode), else nil. A NACK (op-77) or drop returns nil; the delegate prints the `⚠️` detail.
+    @discardableResult
+    private func probeWrite(_ req: Message, _ label: String) async -> [UInt8]? {
+        guard await awaitPaired() else { print("  ⏭️  \(label): not paired"); return nil }
+        let risk = req.operationRisk
+        let deliver = (risk == .delivery)   // arm wall 2 ONLY for a delivery-class msg (scoped, no cartridge)
+        do {
+            let frame = try await client.withWritePolicy(Self.minimumPolicy(for: risk)) {
+                try await self.client.sendAwaitingResponse(
+                    req, authenticationKey: self.authKey, pumpTimeSinceReset: self.signingTimestamp,
+                    allowInsulinDelivery: deliver, deadline: 10, serialized: deliver)
+            }
+            print("  ✅ \(label): ACCEPTED (risk=\(risk), resp 0x\(String(frame.first ?? 0, radix: 16)))")
+            return frame
+        } catch {
+            print("  ⛔️ \(label): NOT accepted (NACK/timeout/drop — see ⚠️ above if op-77)")
+            _ = await awaitPaired(); return nil
+        }
+    }
+
+    /// txId-match probe (B7, READ-ONLY): does the pump echo the request txId in the response frame?
+    private func probeTxIdMatch() async {
+        print("\n--- Phase 2: txId-match probe (B7, read-only) ---")
+        guard let rop = InsulinStatusRequest.props.responseOpCode else { return }
+        var samples: [(UInt8, UInt8)] = []
+        for _ in 0..<4 {
+            guard await awaitPaired() else { break }
+            var reqTx: UInt8 = 0
+            let frame: [UInt8]? = try? await client.withWritePolicy(.readOnly) {
+                try await self.client.transactions.perform(
+                    expectedResponseOn: .currentStatus, opCode: rop, deadline: 10, serialized: false
+                ) { let tx = try self.client.send(InsulinStatusRequest()); reqTx = tx; return tx }
+            }
+            if let f = frame, f.count > 1 { samples.append((reqTx, f[1])) }
+            else { _ = await awaitPaired() }
+        }
+        let echoed = !samples.isEmpty && samples.allSatisfy { $0.0 == $0.1 }
+        print("  exchanges: \(samples.map { "req=\($0.0)→resp=\($0.1)" }.joined(separator: ", "))")
+        print("  → txId echoed by pump on read responses: \(echoed ? "YES" : "NO/partial") (\(samples.count) samples)")
+    }
+
+    /// The full no-cartridge/no-CGM probe: signing time → read sweep → txId-match → signed-write
+    /// acceptance → the "Mobi-only" write probes. Runs once; survives the pump's reconnect cycles.
+    func runProbeSequence() async {
+        print("\n========== PROBE — no cartridge / no CGM · reads + signed writes (NO delivery) ==========")
+        if let t = await probeRead(TimeSinceResetRequest(), as: TimeSinceResetResponse.self, "time/signing") {
+            signingTimestamp = t.currentTime
+            print("  ✅ time: currentTime=\(t.currentTime) signingTs=\(t.signingTimestamp) match=\(t.signingTimestamp == t.currentTime)")
+        }
+
+        print("\n--- Phase 1: read-only settings sweep ---")
+        if let r = await probeRead(ProfileStatusRequest(), as: ProfileStatusResponse.self, "profileStatus") { print("  ✅ profileStatus: parsed (\(r.cargo.count) B)") }
+        if let r = await probeRead(GlobalMaxBolusSettingsRequest(), as: GlobalMaxBolusSettingsResponse.self, "globalMaxBolus") { print("  ✅ globalMaxBolus: parsed (\(r.cargo.count) B)") }
+        if let r = await probeRead(BasalLimitSettingsRequest(), as: BasalLimitSettingsResponse.self, "basalLimit") { print("  ✅ basalLimit: parsed (\(r.cargo.count) B)") }
+        if let r = await probeRead(ControlIQInfoV1Request(), as: ControlIQInfoV1Response.self, "controlIQInfoV1") {
+            ciqClosedLoopEnabled = r.closedLoopEnabled
+            print("  ✅ controlIQInfoV1: closedLoopEnabled=\(r.closedLoopEnabled)")
+        }
+        if let r = await probeRead(HomeScreenMirrorRequest(), as: HomeScreenMirrorResponse.self, "homeScreenMirror") { print("  ✅ homeScreenMirror: parsed (\(r.cargo.count) B)") }
+        if let r = await probeRead(CurrentActiveIdpValuesRequest(), as: CurrentActiveIdpValuesResponse.self, "activeIDP") { print("  ✅ activeIDP: parsed (\(r.cargo.count) B)") }
+        if let r = await probeRead(HistoryLogStatusRequest(), as: HistoryLogStatusResponse.self, "historyLogStatus") {
+            print("  ✅ historyLogStatus: first=\(r.firstSequenceNum) last=\(r.lastSequenceNum)")
+        }
+
+        await probeTxIdMatch()
+
+        print("\n--- Phase 3: signed-write ACCEPTANCE (BolusPermission → release; NO insulin) ---")
+        if let f = await probeWrite(BolusPermissionRequest(), "signed BolusPermission"),
+           let resp = try? ResponseParser.parse(frame: f, characteristic: .control).message as? BolusPermissionResponse {
+            print("  → granted=\(resp.granted) bolusId=\(resp.bolusId) — the pump ACCEPTS our V1-signed write")
+            if resp.granted { _ = await probeWrite(BolusPermissionReleaseRequest(bolusID: resp.bolusId), "BolusPermissionRelease") }
+        }
+
+        print("\n--- Phase 4: \"Mobi-only\" write probes (state-mutating, NO delivery) ---")
+        if let ciq = ciqClosedLoopEnabled { print("  (Control-IQ closedLoop=\(ciq); temp-basal needs it OFF, SetModes needs it ON)") }
+        // time-set: re-set the clock to the value we just read → proves ACCEPT/NACK without shifting it.
+        _ = await probeWrite(ChangeTimeDateRequest(tandemEpochTime: signingTimestamp), "ChangeTimeDate (no-op re-set)")
+        // temp-basal 80% / 30 min, then stop (cleanup). modifiesInsulinDelivery → arms wall 2; no cartridge → no dose.
+        if await probeWrite(SetTempRateRequest(minutes: 30, percent: 80), "SetTempRate 80%/30m") != nil {
+            _ = await probeWrite(StopTempRateRequest(), "StopTempRate (cleanup)")
+        }
+        // modes: sleep on, then off (cleanup).
+        if await probeWrite(SetModesRequest(mode: .sleepModeOn), "SetModes sleepOn") != nil {
+            _ = await probeWrite(SetModesRequest(mode: .sleepModeOff), "SetModes sleepOff (cleanup)")
+        }
+
+        print("\n--- Phase 5: temp-basal with Control-IQ OFF (disambiguate the Phase-4 confound) ---")
+        if let ciq0 = await probeRead(ControlIQInfoV1Request(), as: ControlIQInfoV1Response.self, "CIQ read (pre)") {
+            print("  CIQ pre: closedLoop=\(ciq0.closedLoopEnabled) weight=\(ciq0.weight) tdi=\(ciq0.totalDailyInsulin)")
+            var ciqOff = !ciq0.closedLoopEnabled
+            if ciq0.closedLoopEnabled {
+                print("  → disabling Control-IQ (preserving weight=\(ciq0.weight), tdi=\(ciq0.totalDailyInsulin))…")
+                _ = await probeWrite(ChangeControlIQSettingsRequest(enabled: false, weightLbs: ciq0.weight, totalDailyInsulinUnits: ciq0.totalDailyInsulin), "disable Control-IQ")
+                if let chk = await probeRead(ControlIQInfoV1Request(), as: ControlIQInfoV1Response.self, "CIQ read (post-disable)") {
+                    ciqOff = !chk.closedLoopEnabled
+                    print("  → Control-IQ closedLoop now = \(chk.closedLoopEnabled)")
+                }
+            }
+            print("  → retrying SetTempRate 80%/30m (CIQ off = \(ciqOff))…")
+            let tempOK = await probeWrite(SetTempRateRequest(minutes: 30, percent: 80), "SetTempRate 80%/30m (CIQ off)") != nil
+            if tempOK { _ = await probeWrite(StopTempRateRequest(), "StopTempRate (cleanup)") }
+            if !ciqOff {
+                print("  🔎 INCONCLUSIVE: could not disable Control-IQ (disable write rejected) — temp-basal remains confounded.")
+            } else if tempOK {
+                print("  🔎 RESULT: temp-basal ACCEPTED with CIQ OFF → the earlier rejection was the CIQ-ON precondition, NOT Mobi-only exclusivity.")
+            } else {
+                print("  🔎 RESULT: temp-basal STILL REJECTED with CIQ OFF → genuinely unsupported (Mobi-only) on this t:slim.")
+            }
+            // ALWAYS restore Control-IQ to its original state, regardless of the retry outcome.
+            if ciq0.closedLoopEnabled {
+                print("  → restoring Control-IQ (re-enable, weight=\(ciq0.weight), tdi=\(ciq0.totalDailyInsulin))…")
+                _ = await probeWrite(ChangeControlIQSettingsRequest(enabled: true, weightLbs: ciq0.weight, totalDailyInsulinUnits: ciq0.totalDailyInsulin), "re-enable Control-IQ")
+            }
+            if let ciqEnd = await probeRead(ControlIQInfoV1Request(), as: ControlIQInfoV1Response.self, "CIQ read (final)") {
+                let restored = ciqEnd.closedLoopEnabled == ciq0.closedLoopEnabled
+                print("  \(restored ? "✅ CIQ restored" : "⚠️ CIQ NOT restored — re-enable Control-IQ via the pump UI"): closedLoop=\(ciqEnd.closedLoopEnabled) (original=\(ciq0.closedLoopEnabled))")
+            } else {
+                print("  ⚠️ could not confirm final Control-IQ state — verify on the pump (original closedLoop=\(ciq0.closedLoopEnabled)).")
+            }
+        } else {
+            print("  ⏭️  could not read Control-IQ settings — skipping the CIQ-off retry.")
+        }
+
+        print("\n========== PROBE COMPLETE — press Ctrl-C to exit ==========\n")
     }
 
     func pumpClient(_ c: PumpBLEClient, didReceiveFrame frame: [UInt8], on ch: Characteristic) {
@@ -242,6 +476,20 @@ final class Monitor: NSObject, PumpBLEClientDelegate {
             coordinator?.handle(frame: frame)
         } else if let parsed = try? ResponseParser.parse(frame: frame, characteristic: ch) {
             switch parsed.message {
+            case let m as ApiVersionResponse:
+                print("ℹ️ [hardware] pump firmware profile — API \(m.majorVersion).\(m.minorVersion) "
+                    + "\(m.isMobi ? "(Mobi)" : "(t:slim X2 family)") · pairing=\(pairingScheme.rawValue)")
+            case let m as PumpVersionResponse:
+                print("ℹ️ [hardware] pump version — pumpSW=\(m.pumpRev) armSW=\(m.armSwVer) model=\(m.modelNum)")
+            case let m as PumpFeaturesV1Response:
+                print("ℹ️ [hardware] capability bitmask = 0x\(String(m.featureBitmask, radix: 16)) "
+                    + "· controlIQSupported(bit1024)=\(m.controlIQSupported)")
+            case let m as ErrorResponse:
+                // Attribute the error to the read that triggered it via the echoed txId (this legacy
+                // pump zeroes requestCodeId, so the cargo alone can't name the read).
+                let who = pollTxMap[parsed.txId] ?? "unknown"
+                print("⚠️ [error-response] pump REJECTED \(who) read (txId=\(parsed.txId)) "
+                    + "— reqCodeId=\(m.requestCodeId) errorCode=\(m.errorCodeId) (op-77)")
             case let m as ControlIQIOBResponse:
                 // iobUnits uses swan6hrIOB (matches the pump display, verified on hardware).
                 print("[status] IOB = \(m.iobUnits) u")
@@ -309,6 +557,15 @@ case "monitor":
     let m = Monitor(mode: .monitor); _ = m
     print("READ-ONLY monitor — connect, JPAKE pair, poll status. No writes that change pump state. Ctrl-C to stop.")
     RunLoop.main.run()
+case "probe":
+    // Comprehensive no-cartridge/no-CGM validation: fuller read sweep + txId-match (B7) + signed-write
+    // acceptance (BolusPermission, NO delivery) + the "Mobi-only" write probes (time-set / temp-basal /
+    // SetModes — state-mutating, no dispense). Both delivery walls stay armed; PUMPX2_DELIVER_SALINE is
+    // never set. Intended for the SPARE bench pump only.
+    let m = Monitor(mode: .probe); _ = m
+    print("PROBE — reads + signed writes (NO insulin delivery). Pairs, runs the sequence, then idles.")
+    print("Bench/spare pump only. Ctrl-C to stop.")
+    RunLoop.main.run()
 case "permission-test":
     // Signed-write validation that delivers NO insulin: pair → sign a BolusPermissionRequest
     // → release. Delivery (InitiateBolus) is still hard-blocked (writePolicy .allowNonDelivery).
@@ -366,6 +623,6 @@ case "carb-bolus":
     RunLoop.main.run()
 default:
     print("unknown command: \(args[0])")
-    print("commands: (none)=self-check, scan, monitor, permission-test, bolus <milliunits>, carb-bolus <grams> [bg]")
+    print("commands: (none)=self-check, scan, monitor, probe, permission-test, bolus <milliunits>, carb-bolus <grams> [bg]")
     exit(2)
 }

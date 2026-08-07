@@ -9,6 +9,17 @@
 // Delivery cases carry `.enabled(if: HardwareGate.delivery)`; CGM cases `.enabled(if: HardwareGate.cgmPresent)`
 // — so a config that isn't present shows those cases as SKIPPED (green + recorded), never red, and never
 // attempts delivery without a cartridge.
+//
+// ⚠️ HARDWARE (BLE) CASES CANNOT RUN UNDER `swift test` — confirmed on hardware 2026-08-07.
+// `swift test` executes tests inside Apple's `swiftpm-testing-helper`, whose process carries no
+// `NSBluetoothAlwaysUsageDescription`, so macOS TCC **aborts the process (SIGABRT) at `startScan()`**
+// the instant any case touches CoreBluetooth — a plist on the test bundle can't fix it. So with a real
+// pump + `PUMPX2_HARDWARE=1`, this suite crashes rather than pairs; without hardware it cleanly SKIPS
+// (which is all any "green" run of it has ever exercised). The WORKING hardware path is the
+// `PumpX2BenchHarness` **executable** (its `probe`/`monitor` commands), which embeds the Bluetooth usage
+// string into its Mach-O `__TEXT,__info_plist` via a linker flag (see Package.swift) and is run from an
+// interactive GUI Terminal. This target remains valuable as the declarative case MODEL + the no-hardware
+// gate proof; driving it against real BLE needs an executable/xctest-host with the usage string.
 
 import Foundation
 import Testing
