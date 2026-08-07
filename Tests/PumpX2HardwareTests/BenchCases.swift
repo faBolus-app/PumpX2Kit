@@ -12,7 +12,7 @@ enum BenchCases {
     static var all: [HardwareCase] { [salineBolusHistoryVerify, tempBasalSetAndRead, pairingReconnectCycle] }
 
     /// Runs in EVERY config (whole-suite `connected` gate only): the "RUNNABLE NOW" subset.
-    static var readOnlyCases: [HardwareCase] { [pairingReconnectCycle, stateAndCapabilityReads] }
+    static var readOnlyCases: [HardwareCase] { [pairingReconnectCycle, stateAndCapabilityReads, txIdMatchProbe] }
 
     /// Delivery (saline) cases — gated on `HardwareGate.delivery` (cartridge + saline + deliver flag).
     static var deliveryCases: [HardwareCase] { [salineBolusHistoryVerify, tempBasalSetAndRead] }
@@ -169,6 +169,61 @@ enum BenchCases {
             _ = try await s.request(ControlIQInfoV2Request(), expect: ControlIQInfoV2Response.self)
             _ = try await s.request(CurrentEgvGuiDataV2Request(), expect: CurrentEgvGuiDataV2Response.self) // parse only
             _ = try await s.request(HomeScreenMirrorRequest(), expect: HomeScreenMirrorResponse.self)
+        })
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // txId-MATCH PROBE (B7) — READ-ONLY, no cartridge, no CGM. RUNNABLE NOW.
+    //   Determines whether the pump supports txId-match (correlating a response to its request by the
+    //   transaction-id byte), which would justify a LATER, human-reviewed PR to correlate by txId and drop
+    //   the R3-D delivery-class *transport* serialization (WIP item 12 / BENCH-SESSION-PLAN Obj 2). This
+    //   case only MEASURES — it does not touch `PumpTransactionCoordinator` or remove any serialization.
+    //
+    //   Three findings, in order, each recorded to `s.trace`:
+    //     (a) ECHO — a single read's response echoes the request txId (`response.frame[1] == request.frame[1]`).
+    //     (b) DISTINCT-ID PRESERVATION — successive commands get DISTINCT txIds, each echoed back.
+    //     (c) DECISIVE — two SAME-opcode reads PIPELINED (both issued before the first reply): the two
+    //         responses carry the two DISTINCT request txIds (a bijection), so responses are attributable
+    //         to the correct request BY txId even where opcode-FIFO is ambiguous.
+    //
+    //   HARD SAFETY: the pipelined test uses READ-ONLY, non-mutating status reads ONLY. NEVER pipeline two
+    //   delivery/bolus commands to "test" this — that is the exact double-dose the serialization prevents.
+    //   `exchangeCapturingTxId` throws on any non-read message; both software walls stay armed; no delivery
+    //   is issued. If all three pass → a follow-up MAY de-serialize the transport coordinator; if any fails
+    //   → serialization stays. The AppModel single-delivery mutex (P11) stays regardless.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    static let txIdMatchProbe = HardwareCase(
+        name: "txid-match-probe (read-only)",
+        requiresDelivery: false,
+        requiresCGM: false,
+        preconditions: [],
+        command: { _ in 0 },
+        verify: { s, _, _ in
+            // (a) ECHO — necessary but not sufficient.
+            let echo = try await s.exchangeCapturingTxId(InsulinStatusRequest())
+            #expect(echo.echoed,
+                    "txId ECHO: response frame[1]=\(echo.responseTxId) != request frame[1]=\(echo.requestTxId)")
+
+            // (b) DISTINCT-ID PRESERVATION — successive commands get distinct txIds, each echoed.
+            let b1 = try await s.exchangeCapturingTxId(InsulinStatusRequest())
+            let b2 = try await s.exchangeCapturingTxId(InsulinStatusRequest())
+            #expect(b1.requestTxId != b2.requestTxId, "successive requests must be assigned DISTINCT txIds")
+            #expect(b1.echoed && b2.echoed, "each response must echo its own request txId (distinct-id preservation)")
+
+            // (c) DECISIVE — two SAME-opcode reads pipelined (both issued before the first reply). Assert
+            //     the two responses carry the two distinct request txIds (bijection) — attributable by txId
+            //     even where opcode-FIFO cannot disambiguate. READ-ONLY commands only.
+            async let firstExchange = s.exchangeCapturingTxId(InsulinStatusRequest())
+            async let secondExchange = s.exchangeCapturingTxId(InsulinStatusRequest())
+            let (first, second) = try await (firstExchange, secondExchange)
+            let requestTxIds: Set<UInt8> = [first.requestTxId, second.requestTxId]
+            let responseTxIds: Set<UInt8> = [first.responseTxId, second.responseTxId]
+            #expect(requestTxIds.count == 2, "the two pipelined requests must have distinct txIds")
+            #expect(responseTxIds == requestTxIds,
+                    "concurrent same-opcode disambiguation: the two responses must carry the two distinct request txIds by echo — responses \(responseTxIds) vs requests \(requestTxIds)")
+            // Informational (NOT an assertion): whether opcode-FIFO happened to attribute in issue order this
+            // run. Both echoing in order ⇒ FIFO is currently safe; a swap ⇒ the reorder hazard txId-match fixes.
+            let fifoMatchedIssueOrder = first.echoed && second.echoed
+            _ = fifoMatchedIssueOrder
         })
 
     // ─────────────────────────────────────────────────────────────────────────────────────────
