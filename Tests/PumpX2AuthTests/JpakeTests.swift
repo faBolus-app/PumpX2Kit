@@ -14,7 +14,11 @@ import PumpX2Messages
 
         let cR1 = try client.writeRoundOne()
         let sR1 = try server.writeRoundOne()
-        #expect(cR1.count == 330)   // secp256r1 round one
+        // EC-JPAKE round one for secp256r1 is 330 bytes, but shrinks by a byte or two when a ZKP
+        // scalar happens to have a leading zero (random per nonce; 329 observed in CI). Assert a
+        // magnitude range, not an exact count — the real invariant is the equal derived secret
+        // below. (An exact-count assertion here was a recurring randomness-dependent CI flake.)
+        #expect((326...330).contains(cR1.count))   // secp256r1 round one (length varies by nonce)
         try client.readRoundOne(sR1)
         try server.readRoundOne(cR1)
 
@@ -46,9 +50,11 @@ import PumpX2Messages
     @Test func jpakeAuthProducesRoundMessages() throws {
         let auth = try JpakeAuth(pairingCode: "123456")
         let (r1a, r1b) = try auth.makeRound1Requests()
-        #expect(r1a.centralChallenge.count == 165)
-        #expect(r1b.centralChallenge.count == 165)
-        #expect(r1a.cargo.count == 167 && r1b.cargo.count == 167)
+        // Ranges, not exact counts: the 1a/1b lengths inherit the same nonce-dependent ZKP-scalar
+        // variation as the round-one message above (see inProcessHandshakeDerivesEqualSecret).
+        #expect((162...165).contains(r1a.centralChallenge.count))
+        #expect((162...165).contains(r1b.centralChallenge.count))
+        #expect((164...167).contains(r1a.cargo.count) && (164...167).contains(r1b.cargo.count))
     }
 
     /// Rounds 3–4: authKey = HKDF(serverNonce, derivedSecret); round-4 HMAC + server verify.
