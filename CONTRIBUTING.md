@@ -26,7 +26,30 @@ Every outgoing (request) message and every parsed response must **byte-match** t
 - `PumpX2Messages`, `PumpX2Auth`, `PumpX2BLE` are the public products. Treat their public surface as
   an API other apps depend on: additive changes preferred; breaking changes get a **minor/major
   version bump** (semver) and a note in the PR.
-- Tag releases (`vX.Y.Z`); consumers pin to a tag. `v0.1.0` exists.
+- Tag releases (`vX.Y.Z`); consumers pin to a tag. `v0.1.0` and `v0.2.0` exist; record every release
+  in [`CHANGELOG.md`](CHANGELOG.md).
+
+## Branch model & versioning (§1.3/§1.4)
+Governance is **canonical in faBolus, not forked here.** The three-branch model
+(`deprecated`/`main`/`experimental`), the §1.2 experimental gate, and the §1.4 promotion criteria are
+defined once in [`../faBolus/BRANCHES.md`](../faBolus/BRANCHES.md) and apply to all three code repos in
+lockstep (§1.3). See the local [`BRANCHES.md`](BRANCHES.md) stub. Do not restate or diverge those rules.
+
+**Version-pinning contract (§1.3).** Consumers of a faBolus backend should pin an explicit released
+version: an annotated `vX.Y.Z` tag consumed by `url:` + version, with a committed `Package.resolved`
+and a documented local-path override for development.
+
+**Status: version-pinning is DECLARED UNMET here (owner decision, 2026-08-07).** faBolus consumes this
+package by local path (`faBolus/project.yml` `path: ../PumpX2Kit`), not a URL+version pin, and that
+remains the consumption model. SwiftPM refuses a URL+version dependency on a package that uses
+`.unsafeFlags`, and this package has **two** such sites: `Package.swift:37` (`-DMBEDTLS_CONFIG_FILE` on
+`CMbedTLSJPAKE` — the actual blocker, since it is in the closure of the `PumpX2Auth`/`PumpX2BLE`
+products faBolus consumes) and `Package.swift:69` (a harness linker flag on the `PumpX2BenchHarness`
+executable, which faBolus does not consume). Removing them means vendoring the Mbed TLS config/headers
+in-tree and rehoming the 13 committed `CMbedTLSJPAKE/mbedtls_lib/*.c` symlinks — a build-graph/vendoring
+refactor guarded only by the oracle byte-parity + hardware-pairing tests. **That refactor is deferred
+and is NOT attempted in this change.** This is declared unmet on purpose (not quietly satisfied by the
+local path). Tracked as WIP-REGISTER item 8.
 
 ## Safety
 - The dosing/signing path (`PumpX2Auth`, bolus/cancel/dismiss requests) is the most safety-critical
